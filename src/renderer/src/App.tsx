@@ -172,8 +172,8 @@ function GraphChatApp() {
       selected: edge.id === selectedEdgeId,
       animated: false,
       style: edge.id === selectedEdgeId
-        ? { strokeWidth: 3, stroke: '#0f172a' }
-        : { strokeWidth: 2, stroke: '#57534e' }
+        ? { strokeWidth: 3, stroke: '#7c5af7' }
+        : { strokeWidth: 2, stroke: '#3a3f50' }
     })))
     setSelectedNodeId((current) => snapshot.nodes.some((node) => node.id === current) ? current : snapshot.nodes[0]?.id ?? null)
     setSelectedEdgeId((current) => snapshot.edges.some((edge) => edge.id === current) ? current : null)
@@ -507,8 +507,8 @@ function GraphChatApp() {
   const nodeMenuNode = nodeMenu ? snapshotRef.current?.nodes.find((node) => node.id === nodeMenu.nodeId) ?? null : null
 
   return (
-    <div className="flex h-screen flex-col bg-[#0b0d12] text-stone-100">
-      <header className="relative z-30 border-b border-slate-800 bg-slate-950/90 px-4 py-1">
+    <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
+      <header className="relative z-30 border-b border-[var(--border)] bg-[var(--bg-sidebar)] px-4 py-1">
         <div className="relative flex min-h-[34px] items-center justify-center px-2">
           <div className="absolute left-0 top-1/2 -translate-y-1/2">
             <IconButton onClick={() => setIsSidebarOpen((current) => !current)} label={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
@@ -533,21 +533,21 @@ function GraphChatApp() {
       </header>
       <div className="flex min-h-0 flex-1">
       {isSidebarOpen && (
-      <aside className="flex w-72 flex-col border-r border-slate-800 bg-slate-950/90">
-        <div className="border-b border-slate-800 px-5 py-4">
+      <aside className="flex w-72 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
           <h1 className="font-serif text-2xl font-semibold">Graph Chat</h1>
-          <p className="mt-1 text-sm text-slate-400">Local DAG writing with llama.cpp</p>
+          <p className="mt-1 text-sm text-[var(--text-dim)]">Local DAG writing with llama.cpp</p>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-3">
           {projects.map((project) => (
-            <div key={project.id} className={`relative mb-2 rounded-2xl border px-3 py-3 ${project.id === activeProjectId ? 'border-sky-400/60 bg-slate-900 text-slate-50' : 'border-slate-800 bg-slate-900/70 text-slate-100'}`}>
+            <div key={project.id} className={`relative mb-2 rounded-2xl border px-3 py-3 ${project.id === activeProjectId ? 'border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text)]' : 'border-[var(--border)] bg-[var(--bg-card)]/80 text-[var(--text)]'}`}>
               <div className="flex items-start gap-3">
                 <button className="flex-1 text-left" onClick={() => void switchProject(project.id)}>
                   <div className="font-medium">{project.name}</div>
-                  <div className={`text-xs ${project.id === activeProjectId ? 'text-slate-300' : 'text-slate-500'}`}>{new Date(project.updatedAt).toLocaleString()}</div>
+                  <div className={`text-xs ${project.id === activeProjectId ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)]'}`}>{new Date(project.updatedAt).toLocaleString()}</div>
                 </button>
                 <button
-                  className={`rounded-full border px-3 py-1 text-sm ${project.id === activeProjectId ? 'border-slate-700 text-slate-100 hover:bg-slate-800' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}
+                  className={`rounded-full border px-3 py-1 text-sm ${project.id === activeProjectId ? 'border-[var(--border-strong)] text-[var(--text)] hover:bg-white/5' : 'border-[var(--border-strong)] text-[var(--text-dim)] hover:bg-white/5'}`}
                   onClick={(event) => {
                     event.stopPropagation()
                     setProjectMenu((current) => current?.projectId === project.id ? null : { projectId: project.id })
@@ -558,7 +558,7 @@ function GraphChatApp() {
               </div>
               {projectMenu?.projectId === project.id && (
                 <div
-                  className="absolute right-3 top-12 z-30 w-36 rounded-2xl border border-slate-700 bg-slate-900 p-1 text-sm text-slate-100 shadow-2xl"
+                  className="absolute right-3 top-12 z-30 w-36 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-card)] p-1 text-sm text-[var(--text)] shadow-2xl"
                   onClick={(event) => event.stopPropagation()}
                 >
                   <MenuAction label="Rename" onClick={() => void renameProject(project)} />
@@ -568,30 +568,30 @@ function GraphChatApp() {
             </div>
           ))}
         </div>
-        <div className="border-t border-slate-800 p-3">
-          <button className="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-medium text-slate-950 hover:bg-sky-400" onClick={() => void createProject()}>+ New Project</button>
+        <div className="border-t border-[var(--border)] p-3">
+          <button className="w-full rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-medium text-white hover:bg-[var(--accent-hover)]" onClick={() => void createProject()}>+ New Project</button>
         </div>
       </aside>
       )}
 
       <main ref={mainRef} className="relative flex-1">
-        <div className="absolute bottom-4 left-4 z-20 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-sm shadow-sm">
+        <div className="absolute bottom-4 left-4 z-20 rounded-full border border-[var(--border-strong)] bg-[rgba(28,31,43,0.92)] px-4 py-2 text-sm shadow-sm">
           <span>{status}</span>
-          {settings && <span className="ml-3 text-slate-400">{settings.llamaModelAlias}</span>}
+          {settings && <span className="ml-3 text-[var(--text-dim)]">{settings.llamaModelAlias}</span>}
         </div>
         {error && <div className="absolute right-4 top-4 z-20 max-w-md rounded-2xl border border-red-500/40 bg-red-950/70 px-4 py-3 text-sm text-red-200 shadow">{error}</div>}
         {!hasNodes && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-10">
-            <div className="max-w-xl rounded-[2rem] border border-slate-700 bg-slate-950/80 p-8 shadow-xl backdrop-blur-sm">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Getting Started</div>
+            <div className="max-w-xl rounded-[2rem] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.9)] p-8 shadow-xl backdrop-blur-sm">
+              <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-dim)]">Getting Started</div>
               <h2 className="mt-2 font-serif text-3xl font-semibold">最初のノードを置いて流れを作り始めます。</h2>
-              <p className="mt-3 text-sm leading-7 text-slate-300">上部ボタンかキャンバス右クリックでノードを追加できます。`context` と `instruction` を `text` の上流につないで、生成の文脈を組み立てていきます。</p>
+              <p className="mt-3 text-sm leading-7 text-[var(--text-dim)]">上部ボタンかキャンバス右クリックでノードを追加できます。`context` と `instruction` を `text` の上流につないで、生成の文脈を組み立てていきます。</p>
             </div>
           </div>
         )}
         {canvasMenu && (
           <div
-            className="absolute z-30 w-52 rounded-3xl border border-slate-700 bg-slate-900 p-2 shadow-2xl"
+            className="absolute z-30 w-52 rounded-3xl border border-[var(--border-strong)] bg-[var(--bg-card)] p-2 shadow-2xl"
             style={{ left: canvasMenu.x, top: canvasMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
@@ -602,7 +602,7 @@ function GraphChatApp() {
         )}
         {nodeMenu && nodeMenuNode && (
           <div
-            className="absolute z-30 w-56 rounded-3xl border border-slate-700 bg-slate-900 p-2 shadow-2xl"
+            className="absolute z-30 w-56 rounded-3xl border border-[var(--border-strong)] bg-[var(--bg-card)] p-2 shadow-2xl"
             style={{ left: nodeMenu.x, top: nodeMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
@@ -646,15 +646,15 @@ function GraphChatApp() {
           </div>
         )}
         {isModelModalOpen && settings && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-stone-950/25 p-6" onClick={() => !isModelSwitching && setIsModelModalOpen(false)}>
-            <div className="w-full max-w-2xl rounded-[2rem] border border-slate-700 bg-slate-950 p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => !isModelSwitching && setIsModelModalOpen(false)}>
+            <div className="w-full max-w-2xl rounded-[2rem] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.28em] text-slate-400">Model Picker</div>
+                  <div className="text-xs uppercase tracking-[0.28em] text-[var(--text-dim)]">Model Picker</div>
                   <h3 className="mt-2 font-serif text-2xl font-semibold">`models/` の GGUF を選択</h3>
-                  <p className="mt-2 text-sm leading-7 text-slate-300">小さいモデルほど生成は速くなりやすいです。選択すると llama.cpp サーバーを次回生成時の設定で切り替えます。</p>
+                  <p className="mt-2 text-sm leading-7 text-[var(--text-dim)]">小さいモデルほど生成は速くなりやすいです。選択すると llama.cpp サーバーを次回生成時の設定で切り替えます。</p>
                 </div>
-                <button className="rounded-full border border-slate-700 px-3 py-1 text-sm text-slate-200" onClick={() => setIsModelModalOpen(false)} disabled={isModelSwitching}>Close</button>
+                <button className="rounded-full border border-[var(--border-strong)] px-3 py-1 text-sm text-[var(--text)]" onClick={() => setIsModelModalOpen(false)} disabled={isModelSwitching}>Close</button>
               </div>
               <div className="mt-5 max-h-[420px] space-y-3 overflow-y-auto pr-1">
                 {settings.availableModels.map((model) => {
@@ -662,7 +662,7 @@ function GraphChatApp() {
                   return (
                     <button
                       key={model.path}
-                      className={`block w-full rounded-3xl border px-5 py-4 text-left transition ${isActive ? 'border-sky-400/60 bg-slate-900 text-slate-50' : 'border-slate-700 bg-slate-900/80 text-slate-100 hover:border-slate-500 hover:bg-slate-800'}`}
+                      className={`block w-full rounded-3xl border px-5 py-4 text-left transition ${isActive ? 'border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text)]' : 'border-[var(--border-strong)] bg-[rgba(28,31,43,0.84)] text-[var(--text)] hover:border-[var(--accent-border)] hover:bg-white/5'}`}
                       onClick={() => void handleSelectModel(model)}
                       disabled={isModelSwitching || generation !== null}
                     >
@@ -671,7 +671,7 @@ function GraphChatApp() {
                           <CpuIcon className="h-4 w-4 text-sky-300" />
                           <div className="font-medium">{displayModelName(model.name)}</div>
                         </div>
-                        <span className={`rounded-full px-3 py-1 text-xs ${isActive ? 'bg-sky-400/15 text-sky-100' : 'bg-slate-800 text-slate-300'}`}>{isActive ? 'current' : 'switch'}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs ${isActive ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-white/5 text-[var(--text-dim)]'}`}>{isActive ? 'current' : 'switch'}</span>
                       </div>
                     </button>
                   )
@@ -682,9 +682,9 @@ function GraphChatApp() {
           </div>
         )}
         {projectDialog && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-stone-950/25 p-6" onClick={() => setProjectDialog(null)}>
-            <div className="w-full max-w-md rounded-[2rem] border border-slate-700 bg-slate-950 p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              <div className="text-xs uppercase tracking-[0.28em] text-slate-400">Project</div>
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => setProjectDialog(null)}>
+            <div className="w-full max-w-md rounded-[2rem] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="text-xs uppercase tracking-[0.28em] text-[var(--text-dim)]">Project</div>
               <h3 className="mt-2 font-serif text-2xl font-semibold">{projectDialog.mode === 'create' ? '新しいプロジェクト' : 'プロジェクト名を変更'}</h3>
               <input
                 autoFocus
@@ -699,12 +699,12 @@ function GraphChatApp() {
                     }
                   }
                 }}
-                className="mt-4 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none"
+                className="mt-4 w-full rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none"
               />
               <div className="mt-4 flex justify-end gap-2">
-                <button className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200" onClick={() => setProjectDialog(null)}>Cancel</button>
+                <button className="rounded-full border border-[var(--border-strong)] px-4 py-2 text-sm text-[var(--text)]" onClick={() => setProjectDialog(null)}>Cancel</button>
                 <button
-                  className="rounded-full bg-sky-500 px-4 py-2 text-sm text-slate-950"
+                  className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white hover:bg-[var(--accent-hover)]"
                   onClick={() => {
                     if (projectDialog.mode === 'create') {
                       void submitCreateProject(projectDialog.value)
@@ -754,19 +754,19 @@ function GraphChatApp() {
           onEdgeDoubleClick={(_, edge) => {
             void removeEdge(edge.id)
           }}
-          defaultEdgeOptions={{ style: { strokeWidth: 2, stroke: '#57534e' } }}
+          defaultEdgeOptions={{ style: { strokeWidth: 2, stroke: '#3a3f50' } }}
         >
-          <MiniMap pannable zoomable style={{ backgroundColor: '#0f172a' }} />
+          <MiniMap pannable zoomable style={{ backgroundColor: '#111318' }} />
           <Background gap={18} color="#1f2937" />
           <Controls />
         </ReactFlow>
       </main>
 
       {isInspectorOpen && (
-      <section className="flex w-[380px] flex-col border-l border-slate-800 bg-slate-950/90">
-        <div className="border-b border-slate-800 px-5 py-4">
+      <section className="flex w-[380px] flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 className="font-serif text-xl font-semibold">{selectedNode?.title || 'Node Editor'}</h2>
-          <p className="mt-1 text-sm text-slate-400">{selectedNode ? selectedNode.type : 'Select a node'}</p>
+          <p className="mt-1 text-sm text-[var(--text-dim)]">{selectedNode ? selectedNode.type : 'Select a node'}</p>
         </div>
         {selectedNode ? (
           <NodeEditor
@@ -782,19 +782,19 @@ function GraphChatApp() {
             onDelete={() => void removeSelected()}
           />
         ) : (
-          <div className="p-5 text-sm text-slate-400">Select a node to edit. Connections can be removed by clicking an edge and pressing Delete.</div>
+          <div className="p-5 text-sm text-[var(--text-dim)]">Select a node to edit. Connections can be removed by clicking an edge and pressing Delete.</div>
         )}
         {reader && (
-          <div className="border-t border-slate-800 bg-slate-900/80 p-5">
+          <div className="border-t border-[var(--border)] bg-[rgba(28,31,43,0.84)] p-5">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-serif text-lg font-semibold">{reader.title}</h3>
-              <button className="text-sm text-slate-400" onClick={() => setReader(null)}>Close</button>
+              <button className="text-sm text-[var(--text-dim)]" onClick={() => setReader(null)}>Close</button>
             </div>
             <div className="mb-3 flex gap-2">
               <ToolbarButton onClick={copyReader} label="Copy" />
               <ToolbarButton onClick={() => void exportReader()} label="Export" />
             </div>
-            <textarea readOnly value={reader.content} className="h-56 w-full rounded-2xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100" />
+            <textarea readOnly value={reader.content} className="h-56 w-full rounded-2xl border border-[var(--border-strong)] bg-[var(--bg)] p-3 text-sm text-[var(--text)]" />
           </div>
           )}
         </section>
@@ -807,16 +807,16 @@ function GraphChatApp() {
 function GraphNodeCard({ data }: { data: AppNodeData }) {
   const node = data.graphNode
   const colors = {
-    text: 'border-slate-700 bg-slate-900',
-    context: 'border-sky-700/70 bg-sky-950/40',
-    instruction: 'border-amber-700/70 bg-amber-950/30'
+    text: 'border-[var(--border-strong)] bg-[var(--bg-card)]',
+    context: 'border-[var(--accent-border)] bg-[rgba(124,90,247,0.08)]',
+    instruction: 'border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)]'
   } as const
 
   return (
-    <div className={`relative h-full w-full rounded-3xl border-2 px-4 py-3 shadow-lg shadow-black/30 transition ${colors[node.type]} ${data.isSelected ? 'ring-4 ring-sky-500/20' : ''}`}>
+    <div className={`relative h-full w-full rounded-3xl border-2 px-4 py-3 shadow-lg shadow-black/30 transition ${colors[node.type]} ${data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`}>
       <NodeResizeControl
         position="bottom-right"
-        className={`${data.isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none'} !h-4 !w-4 !rounded-md !border !border-slate-500 !bg-slate-100 shadow`}
+        className={`${data.isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none'} !h-4 !w-4 !rounded-md !border !border-[var(--text-faint)] !bg-[var(--text)] shadow`}
         minWidth={220}
         minHeight={140}
         color="#44403c"
@@ -829,18 +829,18 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
       >
         <div className="h-full w-full rounded-md bg-white" />
       </NodeResizeControl>
-      <Handle type="target" position={Position.Left} className="!h-4 !w-4 !border-2 !border-slate-500 !bg-slate-100" />
-      <Handle type="source" position={Position.Right} className="!h-4 !w-4 !border-2 !border-slate-500 !bg-slate-100" />
+      <Handle type="target" position={Position.Left} className="!h-4 !w-4 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
+      <Handle type="source" position={Position.Right} className="!h-4 !w-4 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
       <div className="flex h-full flex-col">
         <div className="mb-2 flex items-start justify-between gap-2">
           <button className="nodrag nopan text-left" onClick={() => data.onSelect(node.id)}>
-            <div className="text-xs uppercase tracking-[0.24em] text-slate-400">{node.type}</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-dim)]">{node.type}</div>
             <div className="font-serif text-lg font-semibold">{node.title || 'Untitled'}</div>
           </button>
-          {node.type === 'text' && <button className="nodrag nopan rounded-full bg-sky-500 px-3 py-1 text-xs font-medium text-slate-950" onClick={() => data.onGenerate(node.id)}>生成 -&gt;</button>}
+          {node.type === 'text' && <button className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]" onClick={() => data.onGenerate(node.id)}>生成 -&gt;</button>}
         </div>
-        <div className="flex-1 overflow-hidden whitespace-pre-wrap text-sm leading-6 text-slate-200">{node.content || 'No content yet.'}</div>
-        <div className="mt-3 flex justify-between text-xs text-slate-400">
+        <div className="flex-1 overflow-hidden whitespace-pre-wrap text-sm leading-6 text-[var(--text)]">{node.content || 'No content yet.'}</div>
+        <div className="mt-3 flex justify-between text-xs text-[var(--text-dim)]">
           <button className="nodrag nopan" onClick={() => data.onOpenReader(node.id)}>Reader</button>
           <span>{Math.round(node.size.width)} x {Math.round(node.size.height)}</span>
         </div>
@@ -869,29 +869,29 @@ function NodeEditor({
   return (
     <div className="flex-1 overflow-y-auto p-5">
       <label className="mb-4 block">
-        <div className="mb-2 text-sm font-medium text-slate-300">Title</div>
-        <input value={node.title} disabled={disabled} onChange={(event) => onChange({ ...node, title: event.target.value })} className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none" />
+        <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Title</div>
+        <input value={node.title} disabled={disabled} onChange={(event) => onChange({ ...node, title: event.target.value })} className="w-full rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none" />
       </label>
       <label className="mb-4 block">
-        <div className="mb-2 text-sm font-medium text-slate-300">Content</div>
-        <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-3xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none" />
+        <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
+        <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-3xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none" />
       </label>
       {node.type !== 'instruction' && (
         <label className="mb-4 block">
-          <div className="mb-2 text-sm font-medium text-slate-300">Local Instruction</div>
-          <textarea value={node.instruction ?? ''} disabled={disabled} onChange={(event) => onChange({ ...node, instruction: event.target.value })} className="h-40 w-full rounded-3xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none" />
+          <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Local Instruction</div>
+          <textarea value={node.instruction ?? ''} disabled={disabled} onChange={(event) => onChange({ ...node, instruction: event.target.value })} className="h-40 w-full rounded-3xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none" />
         </label>
       )}
-      <div className="text-xs text-slate-400">Current model: {currentModelName ? displayModelName(currentModelName) : (node.model || 'default')}</div>
-      <button className="mt-6 w-full rounded-2xl border border-slate-700 px-4 py-3 text-sm text-slate-200 hover:bg-slate-900" onClick={onDuplicate} disabled={disabled}>Duplicate Node</button>
-      <button className="mt-6 w-full rounded-2xl border border-slate-700 px-4 py-3 text-sm text-slate-200 hover:bg-slate-900" onClick={onClear} disabled={disabled}>Clear Content</button>
+      <div className="text-xs text-[var(--text-dim)]">Current model: {currentModelName ? displayModelName(currentModelName) : (node.model || 'default')}</div>
+      <button className="mt-6 w-full rounded-2xl border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onDuplicate} disabled={disabled}>Duplicate Node</button>
+      <button className="mt-6 w-full rounded-2xl border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onClear} disabled={disabled}>Clear Content</button>
       <button className="mt-6 w-full rounded-2xl border border-red-500/40 px-4 py-3 text-sm text-red-300 hover:bg-red-950/40" onClick={onDelete}>Delete Node</button>
     </div>
   )
 }
 
 function ToolbarButton({ onClick, label }: { onClick: () => void; label: string }) {
-  return <button className="rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-sm font-medium text-slate-100 shadow-sm hover:bg-slate-800" onClick={onClick}>{label}</button>
+  return <button className="rounded-full border border-[var(--border-strong)] bg-[rgba(28,31,43,0.92)] px-4 py-2 text-sm font-medium text-[var(--text)] shadow-sm hover:bg-white/5" onClick={onClick}>{label}</button>
 }
 
 function IconButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {
@@ -900,7 +900,7 @@ function IconButton({ onClick, label, children }: { onClick: () => void; label: 
       type="button"
       aria-label={label}
       title={label}
-      className="flex h-8 w-8 items-center justify-center rounded-sm border border-slate-700 bg-slate-900/90 text-slate-100 shadow-sm transition hover:bg-slate-800"
+      className="flex h-8 w-8 items-center justify-center rounded-sm border border-[var(--border-strong)] bg-[rgba(28,31,43,0.92)] text-[var(--text)] shadow-sm transition hover:bg-white/5"
       onClick={onClick}
     >
       {children}
@@ -911,10 +911,10 @@ function IconButton({ onClick, label, children }: { onClick: () => void; label: 
 function ModelSelectorButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button
-      className="flex max-w-[420px] items-center gap-3 rounded-md border border-slate-600 bg-slate-900/95 px-5 py-2.5 text-sm font-medium text-slate-100 shadow-lg transition hover:border-sky-400/50 hover:bg-slate-800"
+      className="flex max-w-[420px] items-center gap-3 rounded-md border border-[var(--border-strong)] bg-[var(--bg-card)] px-5 py-2.5 text-sm font-medium text-[var(--text)] shadow-lg transition hover:border-[var(--accent-border)] hover:bg-white/5"
       onClick={onClick}
     >
-      <CpuIcon className="h-4 w-4 shrink-0 text-sky-300" />
+      <CpuIcon className="h-4 w-4 shrink-0 text-[var(--accent)]" />
       <span className="truncate">{label}</span>
     </button>
   )
@@ -948,7 +948,7 @@ function SidebarToggleIcon({ className }: { className?: string }) {
 }
 
 function MenuAction({ onClick, label }: { onClick: () => void; label: string }) {
-  return <button className="block w-full rounded-2xl px-4 py-3 text-left text-sm text-slate-100 hover:bg-slate-800" onClick={onClick}>{label}</button>
+  return <button className="block w-full rounded-2xl px-4 py-3 text-left text-sm text-[var(--text)] hover:bg-white/5" onClick={onClick}>{label}</button>
 }
 
 function defaultTitle(type: NodeType): string {

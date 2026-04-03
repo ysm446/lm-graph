@@ -4,7 +4,23 @@
 
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", sans-serif;
+  --bg: #0d0f14;
+  --bg-sidebar: #111318;
+  --bg-chat: #13161e;
+  --bg-input: #1a1d27;
+  --bg-card: #1c1f2b;
+  --bg-elevated: rgba(32, 35, 48, 0.5);
+  --border: #252830;
+  --border-strong: #2e3140;
+  --text: #e2e4ef;
+  --text-dim: #9499b0;
+  --text-faint: #5c6078;
+  --accent: #7c5af7;
+  --accent-hover: #6d4de6;
+  --accent-soft: rgba(124, 90, 247, 0.12);
+  --accent-border: rgba(124, 90, 247, 0.35);
+  --danger: #ef4444;
+  font-family: "Inter", "Segoe UI", "Noto Sans JP", system-ui, sans-serif;
 }
 
 html,
@@ -15,11 +31,8 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(circle at top left, rgba(251, 191, 36, 0.12), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.12), transparent 32%),
-    linear-gradient(180deg, #151820 0%, #0b0d12 100%);
-  color: #e5e7eb;
+  background: var(--bg);
+  color: var(--text);
 }
 
 button,
@@ -30,7 +43,7 @@ textarea {
 
 input,
 textarea {
-  color: #e5e7eb;
+  color: var(--text);
 }
 
 textarea {
@@ -38,14 +51,14 @@ textarea {
 }
 
 .react-flow__minimap {
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(71, 85, 105, 0.9);
+  background: rgba(17, 19, 24, 0.96);
+  border: 1px solid var(--border-strong);
   border-radius: 16px;
 }
 
 .react-flow__minimap-mask {
-  fill: rgba(56, 189, 248, 0.08);
-  stroke: rgba(125, 211, 252, 0.45);
+  fill: var(--accent-soft);
+  stroke: var(--accent-border);
   stroke-width: 1;
 }
 
@@ -55,13 +68,13 @@ textarea {
 
 .react-flow__controls,
 .react-flow__controls-button {
-  background: rgba(15, 23, 42, 0.94);
-  border-color: rgba(71, 85, 105, 0.9);
-  color: #e5e7eb;
+  background: rgba(17, 19, 24, 0.96);
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 .react-flow__controls-button:hover {
-  background: rgba(30, 41, 59, 0.98);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .react-flow__controls-button svg {
