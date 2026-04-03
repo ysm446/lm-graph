@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('graphChat', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
   listModels: () => ipcRenderer.invoke('models:list'),
   selectModel: (modelPath: string) => ipcRenderer.invoke('models:select', modelPath),
+  ejectModel: () => ipcRenderer.invoke('models:eject'),
   createProject: (name: string) => ipcRenderer.invoke('project:create', name),
   renameProject: (id: string, name: string) => ipcRenderer.invoke('project:rename', id, name),
   deleteProject: (id: string) => ipcRenderer.invoke('project:delete', id),

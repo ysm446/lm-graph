@@ -44,6 +44,7 @@ export interface ProjectSnapshot {
 export interface ModelOption {
   name: string
   path: string
+  sizeBytes: number
 }
 
 export interface AppSettings {

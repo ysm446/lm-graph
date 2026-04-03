@@ -88,6 +88,7 @@ function GraphChatApp() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<AppNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const snapshotRef = useRef<ProjectSnapshot | null>(null)
+  const copiedNodeIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     void window.graphChat.bootstrap().then(({ projects, snapshot, settings }) => {
@@ -417,6 +418,23 @@ function GraphChatApp() {
     }
   }
 
+  async function handleEjectModel() {
+    if (!settings || generation !== null) return
+    setIsModelSwitching(true)
+    setError(null)
+    setStatus(`Unloading ${displayModelName(settings.selectedModelName)}...`)
+    try {
+      const result = await window.graphChat.ejectModel()
+      setSettings(result.settings)
+      setIsModelLoaded(false)
+      setStatus(`Unloaded ${displayModelName(result.settings.selectedModelName)}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsModelSwitching(false)
+    }
+  }
+
   const handleNodeChanges: OnNodesChange<Node<AppNodeData>> = async (changes) => {
     onNodesChange(changes)
     const positionChanges = changes.filter((change) => change.type === 'position' && change.position && !change.dragging)
@@ -447,6 +465,18 @@ function GraphChatApp() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableElement(event.target)) return
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && selectedNode) {
+        event.preventDefault()
+        copiedNodeIdRef.current = selectedNode.id
+        setStatus(`Copied ${selectedNode.title || 'node'}`)
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v' && copiedNodeIdRef.current) {
+        event.preventDefault()
+        void duplicateNode(copiedNodeIdRef.current)
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd' && selectedNode) {
         event.preventDefault()
         void duplicateNode(selectedNode.id)
@@ -526,11 +556,20 @@ function GraphChatApp() {
               <ToolbarButton onClick={() => void stopGeneration()} label="Stop" />
             )}
           </div>
-          <div className="max-w-full">
+          <div className="flex max-w-full items-center gap-2">
             <ModelSelectorButton
               onClick={() => void openModelModal()}
               label={settings ? (isModelLoaded ? displayModelName(settings.selectedModelName) : 'Load model') : 'Load model'}
             />
+            {settings && isModelLoaded && (
+              <IconButton
+                onClick={() => void handleEjectModel()}
+                label="Eject model"
+                disabled={isModelSwitching || generation !== null}
+              >
+                <EjectIcon className="h-4 w-4" />
+              </IconButton>
+            )}
           </div>
         </div>
       </header>
@@ -545,14 +584,14 @@ function GraphChatApp() {
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-3">
           {projects.map((project) => (
-            <div key={project.id} className={`relative mb-2 rounded-2xl border px-3 py-3 ${project.id === activeProjectId ? 'border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text)]' : 'border-[var(--border)] bg-[var(--bg-card)]/80 text-[var(--text)]'}`}>
+            <div key={project.id} className={`relative mb-1.5 rounded-[10px] px-3 py-3 ${project.id === activeProjectId ? 'bg-[rgba(124,90,247,0.18)] text-[var(--text)]' : 'text-[var(--text-dim)]'}`}>
               <div className="flex items-start gap-3">
                 <button className="flex-1 text-left" onClick={() => void switchProject(project.id)}>
-                  <div className="font-medium">{project.name}</div>
-                  <div className={`text-xs ${project.id === activeProjectId ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)]'}`}>{new Date(project.updatedAt).toLocaleString()}</div>
+                  <div className={`truncate text-[13px] font-medium ${project.id === activeProjectId ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'}`}>{project.name}</div>
+                  <div className={`truncate text-[11px] ${project.id === activeProjectId ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)]'}`}>{new Date(project.updatedAt).toLocaleString()}</div>
                 </button>
                 <button
-                  className={`rounded-full border px-3 py-1 text-sm ${project.id === activeProjectId ? 'border-[var(--border-strong)] text-[var(--text)] hover:bg-white/5' : 'border-[var(--border-strong)] text-[var(--text-dim)] hover:bg-white/5'}`}
+                  className={`rounded-full px-2 py-1 text-sm ${project.id === activeProjectId ? 'text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]' : 'text-[var(--text-faint)] hover:bg-white/5 hover:text-[var(--text-dim)]'}`}
                   onClick={(event) => {
                     event.stopPropagation()
                     setProjectMenu((current) => current?.projectId === project.id ? null : { projectId: project.id })
@@ -651,33 +690,33 @@ function GraphChatApp() {
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => !isModelSwitching && setIsModelModalOpen(false)}>
             <div className="w-full max-w-2xl rounded-[2rem] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.28em] text-[var(--text-dim)]">Model Picker</div>
-                  <h3 className="mt-2 font-serif text-2xl font-semibold">`models/` の GGUF を選択</h3>
-                  <p className="mt-2 text-sm leading-7 text-[var(--text-dim)]">小さいモデルほど生成は速くなりやすいです。選択すると llama.cpp サーバーを次回生成時の設定で切り替えます。</p>
-                </div>
+                <div />
                 <button className="rounded-full border border-[var(--border-strong)] px-3 py-1 text-sm text-[var(--text)]" onClick={() => setIsModelModalOpen(false)} disabled={isModelSwitching}>Close</button>
               </div>
-              <div className="mt-5 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                {settings.availableModels.map((model) => {
+              <div className="mt-4 max-h-[420px] overflow-y-auto">
+                <div className="px-1 pb-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)]">Your Models</div>
+                {filteredModels.map((model) => {
                   const isActive = model.path === settings.selectedModelPath
                   return (
                     <button
                       key={model.path}
-                      className={`block w-full rounded-3xl border px-5 py-4 text-left transition ${isActive ? 'border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text)]' : 'border-[var(--border-strong)] bg-[rgba(28,31,43,0.84)] text-[var(--text)] hover:border-[var(--accent-border)] hover:bg-white/5'}`}
+                      className={`block w-full border-0 px-3 py-4 text-left transition ${isActive ? 'bg-white/5 text-[var(--text)]' : 'text-[var(--text-dim)] hover:bg-white/4 hover:text-[var(--text)]'}`}
                       onClick={() => void handleSelectModel(model)}
                       disabled={isModelSwitching || generation !== null}
                     >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <CpuIcon className="h-4 w-4 text-sky-300" />
-                          <div className="font-medium">{displayModelName(model.name)}</div>
+                      <div className="flex items-center justify-between gap-6">
+                        <div className="min-w-0 truncate font-mono text-[17px] font-semibold leading-7">{displayModelName(model.name)}</div>
+                        <div className="flex shrink-0 items-center gap-6 text-sm text-[var(--text-faint)]">
+                          <span className="rounded-[8px] bg-white/6 px-3 py-1 font-semibold text-[var(--text-dim)]">{extractModelParams(model.name) ?? '--'}</span>
+                          <span>{formatModelSize(model.sizeBytes)}</span>
                         </div>
-                        <span className={`rounded-full px-3 py-1 text-xs ${isActive ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-white/5 text-[var(--text-dim)]'}`}>{isActive ? 'current' : 'switch'}</span>
                       </div>
                     </button>
                   )
                 })}
+                {filteredModels.length === 0 && (
+                  <p className="px-3 py-4 text-center text-sm text-[var(--text-faint)]">No models found</p>
+                )}
               </div>
               {generation && <p className="mt-4 text-sm text-amber-300">生成中はモデルを切り替えられません。</p>}
             </div>
@@ -726,6 +765,7 @@ function GraphChatApp() {
           edges={edges}
           nodeTypes={nodeTypes}
           proOptions={{ hideAttribution: true }}
+          style={{ backgroundColor: 'var(--bg-canvas)' }}
           fitView
           onPaneContextMenu={openCanvasMenu}
             onPaneClick={() => {
@@ -758,8 +798,8 @@ function GraphChatApp() {
           }}
           defaultEdgeOptions={{ style: { strokeWidth: 2, stroke: '#3a3f50' } }}
         >
-          <MiniMap pannable zoomable style={{ backgroundColor: '#111318' }} />
-          <Background gap={18} color="#1f2937" />
+          <MiniMap pannable zoomable style={{ backgroundColor: '#181b23' }} />
+          <Background gap={20} size={1.4} color="#2d3342" />
           <Controls />
         </ReactFlow>
       </main>
@@ -796,7 +836,7 @@ function GraphChatApp() {
               <ToolbarButton onClick={copyReader} label="Copy" />
               <ToolbarButton onClick={() => void exportReader()} label="Export" />
             </div>
-            <textarea readOnly value={reader.content} className="h-56 w-full rounded-2xl border border-[var(--border-strong)] bg-[var(--bg)] p-3 text-sm text-[var(--text)]" />
+            <textarea readOnly value={reader.content} className="h-56 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-3 text-sm text-[var(--text)]" />
           </div>
           )}
         </section>
@@ -811,7 +851,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const colors = {
     text: 'border-[var(--border-strong)] bg-[var(--bg-card)]',
     context: 'border-[var(--accent-border)] bg-[rgba(124,90,247,0.08)]',
-    instruction: 'border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)]'
+    instruction: 'border-[rgba(217,70,239,0.32)] bg-[rgba(217,70,239,0.10)]'
   } as const
 
   return (
@@ -831,7 +871,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
       >
         <div className="h-full w-full rounded-md bg-white" />
       </NodeResizeControl>
-      <Handle type="target" position={Position.Left} className="!h-4 !w-4 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
+      {node.type === 'text' && <Handle type="target" position={Position.Left} className="!h-4 !w-4 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />}
       <Handle type="source" position={Position.Right} className="!h-4 !w-4 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
       <div className="flex h-full flex-col">
         <div className="mb-2 flex items-start justify-between gap-2">
@@ -872,22 +912,22 @@ function NodeEditor({
     <div className="flex-1 overflow-y-auto p-5">
       <label className="mb-4 block">
         <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Title</div>
-        <input value={node.title} disabled={disabled} onChange={(event) => onChange({ ...node, title: event.target.value })} className="w-full rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none" />
+        <input value={node.title} disabled={disabled} onChange={(event) => onChange({ ...node, title: event.target.value })} className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
       </label>
       <label className="mb-4 block">
         <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
-        <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-3xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none" />
+        <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
       </label>
       {node.type !== 'instruction' && (
         <label className="mb-4 block">
           <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Local Instruction</div>
-          <textarea value={node.instruction ?? ''} disabled={disabled} onChange={(event) => onChange({ ...node, instruction: event.target.value })} className="h-40 w-full rounded-3xl border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none" />
+          <textarea value={node.instruction ?? ''} disabled={disabled} onChange={(event) => onChange({ ...node, instruction: event.target.value })} className="h-40 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
         </label>
       )}
       <div className="text-xs text-[var(--text-dim)]">Current model: {currentModelName ? displayModelName(currentModelName) : (node.model || 'default')}</div>
-      <button className="mt-6 w-full rounded-2xl border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onDuplicate} disabled={disabled}>Duplicate Node</button>
-      <button className="mt-6 w-full rounded-2xl border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onClear} disabled={disabled}>Clear Content</button>
-      <button className="mt-6 w-full rounded-2xl border border-red-500/40 px-4 py-3 text-sm text-red-300 hover:bg-red-950/40" onClick={onDelete}>Delete Node</button>
+      <button className="mt-6 w-full rounded-md border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onDuplicate} disabled={disabled}>Duplicate Node</button>
+      <button className="mt-6 w-full rounded-md border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onClear} disabled={disabled}>Clear Content</button>
+      <button className="mt-6 w-full rounded-md border border-red-500/40 px-4 py-3 text-sm text-red-300 hover:bg-red-950/40" onClick={onDelete}>Delete Node</button>
     </div>
   )
 }
@@ -896,14 +936,15 @@ function ToolbarButton({ onClick, label }: { onClick: () => void; label: string 
   return <button className="rounded-full border border-[var(--border-strong)] bg-[rgba(28,31,43,0.92)] px-4 py-2 text-sm font-medium text-[var(--text)] shadow-sm hover:bg-white/5" onClick={onClick}>{label}</button>
 }
 
-function IconButton({ onClick, label, children, active = false }: { onClick: () => void; label: string; children: ReactNode; active?: boolean }) {
+function IconButton({ onClick, label, children, active = false, disabled = false }: { onClick: () => void; label: string; children: ReactNode; active?: boolean; disabled?: boolean }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className={`flex h-[30px] w-[30px] items-center justify-center rounded-[10px] text-[var(--text-faint)] transition hover:bg-white/5 hover:text-[var(--text-dim)] ${active ? 'text-[var(--accent)]' : ''}`}
+      className={`flex h-[30px] w-[30px] items-center justify-center rounded-[10px] text-[var(--text-faint)] transition hover:bg-white/5 hover:text-[var(--text-dim)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-faint)] ${active ? 'text-[var(--accent)]' : ''}`}
       onClick={onClick}
+      disabled={disabled}
     >
       {children}
     </button>
@@ -977,6 +1018,16 @@ function ChevronDownIcon({ className }: { className?: string }) {
   )
 }
 
+function EjectIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M12 4 19 11H5l7-7Z" />
+      <path d="M5 15h14" />
+      <path d="M7 19h10" />
+    </svg>
+  )
+}
+
 function MenuAction({ onClick, label }: { onClick: () => void; label: string }) {
   return <button className="block w-full rounded-2xl px-4 py-3 text-left text-sm text-[var(--text)] hover:bg-white/5" onClick={onClick}>{label}</button>
 }
@@ -994,6 +1045,22 @@ function defaultTitle(type: NodeType): string {
 
 function displayModelName(modelName: string): string {
   return modelName.split(/[\\/]/).pop() ?? modelName
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+}
+
+function extractModelParams(modelName: string): string | null {
+  const match = modelName.match(/(\d+(?:\.\d+)?)\s*[Bb](?:[^a-zA-Z]|$)/)
+  return match ? `${match[1]}B` : null
+}
+
+function formatModelSize(sizeBytes: number): string {
+  const gib = sizeBytes / 1024 ** 3
+  return `${gib.toFixed(2)} GB`
 }
 
 function collectReaderText(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEdgeRecord[]): string {

@@ -54,6 +54,10 @@ function registerIpc(): void {
     const settings = await llamaServer.selectModel(modelPath)
     return { settings }
   })
+  ipcMain.handle('models:eject', async () => {
+    await llamaServer.stop()
+    return { settings: llamaServer.getSettings() }
+  })
   ipcMain.handle('project:create', async (_event, name: string) => {
     const project = repository.createProject(name)
     return { projects: repository.listProjects(), snapshot: repository.getProjectSnapshot(project.id) }
@@ -105,7 +109,6 @@ function registerIpc(): void {
     generationControllers.delete(generationId)
   })
   ipcMain.handle('generation:start', async (event, payload: { projectId: string; sourceNodeId: string }) => {
-    await llamaServer.ensureRunning()
     const snapshot = repository.getProjectSnapshot(payload.projectId)
     const sourceNode = snapshot.nodes.find((node) => node.id === payload.sourceNodeId)
     if (!sourceNode || sourceNode.type !== 'text') {
@@ -145,6 +148,7 @@ async function streamGeneration(input: {
   signal: AbortSignal
 }): Promise<void> {
   try {
+    await llamaServer.ensureRunning()
     const response = await fetch(`${llamaServer.getSettings().llamaBaseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -153,7 +157,7 @@ async function streamGeneration(input: {
         stream: true,
         messages: [
           { role: 'system', content: input.systemPrompt },
-          { role: 'user', content: input.userContext + '\\n\\n---\\n以上の文脈を踏まえて、本文を書き直してください。' }
+          { role: 'user', content: input.userContext + '\\n\\n---\\nWrite the target text based on the context above.' }
         ]
       }),
       signal: input.signal
@@ -237,19 +241,19 @@ ${node.content.trim()}`)
 ${node.content.trim()}`)
   const targetInfo = self
     ? `# Target Node${self.title ? `: ${self.title}` : ''}
-このノードの本文を書き換えてください。`
+Write the final content for this target node.`
     : `# Target Node
-このノードの本文を書き換えてください。`
+Write the final content for this target node.`
 
   return {
     systemPrompt: [...systemParts, ...localInstructions].join('\n\n') || 'You are a helpful writing assistant.',
     userContext: [
-      directParentTexts.length > 0 ? '以下の Direct Parent Text を最優先の素材として扱ってください。' : '',
+      directParentTexts.length > 0 ? 'Use the direct parent texts below as the highest-priority source material.' : '',
       ...directParentTexts,
       ...upstreamTexts,
       ...contextParts,
       targetInfo
-    ].filter(Boolean).join('\n\n') || self?.title || '空の文脈から本文を書き直してください。'
+    ].filter(Boolean).join('\n\n') || self?.title || 'Write the final content for the target node.'
   }
 }
 

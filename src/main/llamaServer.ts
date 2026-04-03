@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { accessSync, constants, existsSync, readdirSync } from 'node:fs'
+import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { app } from 'electron'
@@ -37,7 +37,8 @@ export class LlamaServerManager {
       .filter((file) => !/mmproj/i.test(file))
       .map((file) => ({
         path: file,
-        name: relative(this.modelsDir, file).replace(/\\/g, '/')
+        name: relative(this.modelsDir, file).replace(/\\/g, '/'),
+        sizeBytes: statSync(file).size
       }))
       .sort((left, right) => left.name.localeCompare(right.name))
 
