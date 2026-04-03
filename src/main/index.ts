@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { GraphRepository } from './database'
 import { LlamaServerManager } from './llamaServer'
-import type { GraphEdgeRecord, GraphNodeRecord, UiPreferences } from './types'
+import type { GraphEdgeRecord, GraphNodeRecord, ProjectSnapshot, UiPreferences } from './types'
 
 const repository = new GraphRepository()
 const llamaServer = new LlamaServerManager()
@@ -102,6 +102,10 @@ function registerIpc(): void {
     return { projects: repository.listProjects(), snapshot }
   })
   ipcMain.handle('project:open', async (_event, id: string) => repository.getProjectSnapshot(id))
+  ipcMain.handle('project:saveSnapshot', async (_event, snapshot: ProjectSnapshot) => {
+    const saved = repository.saveProjectSnapshot(snapshot)
+    return { projects: repository.listProjects(), snapshot: saved }
+  })
   ipcMain.handle('node:create', async (_event, input) => {
     const node = repository.createNode(input)
     return { node, snapshot: repository.getProjectSnapshot(node.projectId), projects: repository.listProjects() }
@@ -137,8 +141,8 @@ function registerIpc(): void {
     generationControllers.get(generationId)?.abort()
     generationControllers.delete(generationId)
   })
-  ipcMain.handle('generation:start', async (event, payload: { projectId: string; sourceNodeId: string }) => {
-    const snapshot = repository.getProjectSnapshot(payload.projectId)
+  ipcMain.handle('generation:start', async (event, payload: { projectId: string; sourceNodeId: string; snapshot?: ProjectSnapshot }) => {
+    const snapshot = payload.snapshot ?? repository.getProjectSnapshot(payload.projectId)
     const sourceNode = snapshot.nodes.find((node) => node.id === payload.sourceNodeId)
     if (!sourceNode || sourceNode.type !== 'text') {
       throw new Error('Generation can only start from a text node.')
@@ -150,6 +154,8 @@ function registerIpc(): void {
     void streamGeneration({
       event,
       generationId,
+      snapshot,
+      persistToRepository: payload.snapshot === undefined,
       targetNode: sourceNode,
       projectId: payload.projectId,
       systemPrompt: context.systemPrompt,
@@ -160,7 +166,7 @@ function registerIpc(): void {
     return {
       generationId,
       targetNodeId: sourceNode.id,
-      snapshot: repository.getProjectSnapshot(payload.projectId),
+      snapshot,
       projects: repository.listProjects()
     }
   })
@@ -169,6 +175,8 @@ function registerIpc(): void {
 async function streamGeneration(input: {
   event: Electron.IpcMainInvokeEvent
   generationId: string
+  snapshot: ProjectSnapshot
+  persistToRepository: boolean
   targetNode: GraphNodeRecord
   projectId: string
   systemPrompt: string
@@ -202,6 +210,7 @@ async function streamGeneration(input: {
     let finishReason: string | null = null
     let completionTokens: number | null = null
     const startedAt = Date.now()
+    let workingSnapshot = input.snapshot
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -223,31 +232,49 @@ async function streamGeneration(input: {
           if (!delta) continue
           content += delta
           const visibleContent = stripThinkTags(content)
-          repository.updateNode({
-            id: input.targetNode.id,
-            content: visibleContent,
-            isGenerated: true,
-            model: llamaServer.getSettings().llamaModelAlias
-          })
+          if (input.persistToRepository) {
+            repository.updateNode({
+              id: input.targetNode.id,
+              content: visibleContent,
+              isGenerated: true,
+              model: llamaServer.getSettings().llamaModelAlias
+            })
+          } else {
+            workingSnapshot = updateSnapshotNode(workingSnapshot, input.targetNode.id, {
+              content: visibleContent,
+              isGenerated: true,
+              model: llamaServer.getSettings().llamaModelAlias
+            })
+          }
           input.event.sender.send('generation:delta', { generationId: input.generationId, nodeId: input.targetNode.id, content: visibleContent })
         }
       }
     }
-    repository.updateNode({
-      id: input.targetNode.id,
-      content: stripThinkTags(content),
-      isGenerated: true,
-      model: llamaServer.getSettings().llamaModelAlias,
-      generationMeta: buildGenerationMeta({
-        completionTokens,
-        durationMs: Date.now() - startedAt,
-        finishReason
-      })
+    const generationMeta = buildGenerationMeta({
+      completionTokens,
+      durationMs: Date.now() - startedAt,
+      finishReason
     })
+    if (input.persistToRepository) {
+      repository.updateNode({
+        id: input.targetNode.id,
+        content: stripThinkTags(content),
+        isGenerated: true,
+        model: llamaServer.getSettings().llamaModelAlias,
+        generationMeta
+      })
+    } else {
+      workingSnapshot = updateSnapshotNode(workingSnapshot, input.targetNode.id, {
+        content: stripThinkTags(content),
+        isGenerated: true,
+        model: llamaServer.getSettings().llamaModelAlias,
+        generationMeta
+      })
+    }
     input.event.sender.send('generation:done', {
       generationId: input.generationId,
       nodeId: input.targetNode.id,
-      snapshot: repository.getProjectSnapshot(input.projectId),
+      snapshot: input.persistToRepository ? repository.getProjectSnapshot(input.projectId) : workingSnapshot,
       projects: repository.listProjects()
     })
   } catch (error) {
@@ -256,6 +283,12 @@ async function streamGeneration(input: {
   }
 }
 
+function updateSnapshotNode(snapshot: ProjectSnapshot, nodeId: string, patch: Partial<GraphNodeRecord>): ProjectSnapshot {
+  return {
+    ...snapshot,
+    nodes: snapshot.nodes.map((node) => node.id === nodeId ? { ...node, ...patch, updatedAt: new Date().toISOString() } : node)
+  }
+}
 function buildGenerationMeta(input: { completionTokens: number | null; durationMs: number; finishReason: string | null }) {
   const durationSeconds = input.durationMs > 0 ? Number((input.durationMs / 1000).toFixed(2)) : null
   const tokensPerSecond =

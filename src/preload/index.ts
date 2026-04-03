@@ -1,4 +1,4 @@
-﻿import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('graphChat', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('graphChat', {
   renameProject: (id: string, name: string) => ipcRenderer.invoke('project:rename', id, name),
   deleteProject: (id: string) => ipcRenderer.invoke('project:delete', id),
   openProject: (id: string) => ipcRenderer.invoke('project:open', id),
+  saveProjectSnapshot: (snapshot) => ipcRenderer.invoke('project:saveSnapshot', snapshot),
   createNode: (input) => ipcRenderer.invoke('node:create', input),
   updateNode: (input) => ipcRenderer.invoke('node:update', input),
   deleteNode: (id: string) => ipcRenderer.invoke('node:delete', id),

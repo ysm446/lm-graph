@@ -85,6 +85,7 @@ function GraphChatApp() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [isProjectDirty, setIsProjectDirty] = useState(false)
   const [status, setStatus] = useState('Loading...')
   const [error, setError] = useState<string | null>(null)
   const [reader, setReader] = useState<ReaderState | null>(null)
@@ -122,6 +123,7 @@ function GraphChatApp() {
       setGeneralSections(uiPreferences.generalSections)
       setActiveProjectId(snapshot.project.id)
       applySnapshot(snapshot)
+      setIsProjectDirty(false)
       hasLoadedPreferencesRef.current = true
       setStatus('Ready')
     }).catch((err) => {
@@ -174,6 +176,16 @@ function GraphChatApp() {
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isProjectDirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isProjectDirty])
 
   useEffect(() => {
     const handlePointerMove = (event: MouseEvent) => {
@@ -276,12 +288,15 @@ function GraphChatApp() {
   }
 
   async function switchProject(projectId: string) {
+    if (!confirmDiscardUnsavedChanges()) return
     const snapshot = await window.graphChat.openProject(projectId)
     applySnapshot(snapshot)
+    setIsProjectDirty(false)
     setStatus(`Project: ${snapshot.project.name}`)
   }
 
   async function createProject() {
+    if (!confirmDiscardUnsavedChanges()) return
     setProjectDialog({
       mode: 'create',
       value: `Project ${projects.length + 1}`
@@ -294,6 +309,7 @@ function GraphChatApp() {
     const result = await window.graphChat.createProject(trimmed)
     setProjects(result.projects)
     applySnapshot(result.snapshot)
+    setIsProjectDirty(false)
     setProjectDialog(null)
   }
 
@@ -315,24 +331,59 @@ function GraphChatApp() {
   }
 
   async function deleteProject(project: ProjectRecord) {
-    if (!confirm(`Delete "${project.name}"?`)) return
+    if (project.id !== activeProjectId && !confirm(`Delete "${project.name}"?`)) return
+    if (project.id === activeProjectId) {
+      if (!confirmDiscardUnsavedChanges()) return
+      if (!confirm(`Delete "${project.name}"?`)) return
+    }
     const result = await window.graphChat.deleteProject(project.id)
     setProjects(result.projects)
     applySnapshot(result.snapshot)
+    setIsProjectDirty(false)
+  }
+
+  function confirmDiscardUnsavedChanges() {
+    return !isProjectDirty || confirm('You have unsaved changes. Discard them?')
+  }
+
+  async function saveProject() {
+    const snapshot = snapshotRef.current
+    if (!snapshot || !isProjectDirty) return
+    setError(null)
+    try {
+      const result = await window.graphChat.saveProjectSnapshot(snapshot)
+      setProjects(result.projects)
+      applySnapshot(result.snapshot)
+      setIsProjectDirty(false)
+      setStatus(`Saved ${result.snapshot.project.name}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function addNode(type: NodeType, position?: { x: number; y: number }) {
-    if (!activeProjectId) return
+    const snapshot = snapshotRef.current
+    if (!activeProjectId || !snapshot) return
     const base = position ?? (selectedNode?.position ?? { x: 120, y: 120 })
-    const result = await window.graphChat.createNode({
+    const now = new Date().toISOString()
+    const node: GraphNodeRecord = {
+      id: crypto.randomUUID(),
       projectId: activeProjectId,
       type,
       title: defaultTitle(type),
-      position: position ? base : { x: base.x + 40, y: base.y + 160 }
-    })
-    setProjects(result.projects)
-    applySnapshot(result.snapshot)
-    selectNode(result.node.id)
+      content: '',
+      instruction: null,
+      model: null,
+      isGenerated: false,
+      generationMeta: null,
+      createdAt: now,
+      updatedAt: now,
+      position: position ? base : { x: base.x + 40, y: base.y + 160 },
+      size: { width: 288, height: 180 }
+    }
+    applySnapshot({ ...snapshot, nodes: [...snapshot.nodes, node] })
+    setIsProjectDirty(true)
+    selectNode(node.id)
     setSelectedEdgeId(null)
     setCanvasMenu(null)
     setNodeMenu(null)
@@ -340,18 +391,10 @@ function GraphChatApp() {
   }
 
   async function persistNode(node: GraphNodeRecord) {
-    const updated = await window.graphChat.updateNode({
-      id: node.id,
-      title: node.title,
-      content: node.content,
-      instruction: node.instruction,
-      position: node.position,
-      size: node.size,
-      model: node.model,
-      isGenerated: node.isGenerated,
-      generationMeta: node.generationMeta
-    })
+    const updated = { ...node, updatedAt: new Date().toISOString() }
     mutateLocalNode(updated)
+    setIsProjectDirty(true)
+    return updated
   }
 
   async function handleResize(nodeId: string, input: { position: { x: number; y: number }; size: { width: number; height: number } }) {
@@ -365,11 +408,23 @@ function GraphChatApp() {
   }
 
   async function onConnect(connection: Connection) {
-    if (!activeProjectId || !connection.source || !connection.target) return
+    const snapshot = snapshotRef.current
+    if (!activeProjectId || !snapshot || !connection.source || !connection.target) return
     try {
-      const result = await window.graphChat.createEdge(activeProjectId, connection.source, connection.target)
-      setProjects(result.projects)
-      applySnapshot(result.snapshot)
+      if (connection.source === connection.target) {
+        throw new Error('A node cannot connect to itself.')
+      }
+      const nextEdge: GraphEdgeRecord = {
+        id: crypto.randomUUID(),
+        projectId: activeProjectId,
+        sourceId: connection.source,
+        targetId: connection.target
+      }
+      if (wouldCreateCycle(connection.source, connection.target, snapshot.edges)) {
+        throw new Error('This connection would create a cycle.')
+      }
+      applySnapshot({ ...snapshot, edges: [...snapshot.edges, nextEdge] })
+      setIsProjectDirty(true)
       selectNode(null)
       setStatus('Connection added')
     } catch (err) {
@@ -378,14 +433,15 @@ function GraphChatApp() {
   }
 
   async function handleGenerate(nodeId: string) {
-    if (generation || !activeProjectId) return
+    if (generation || !activeProjectId || !snapshotRef.current) return
     setError(null)
     setEditingNodeId(null)
     setStatus('Starting generation...')
     try {
-      const result = await window.graphChat.startGeneration({ projectId: activeProjectId, sourceNodeId: nodeId })
+      const result = await window.graphChat.startGeneration({ projectId: activeProjectId, sourceNodeId: nodeId, snapshot: snapshotRef.current })
       setProjects(result.projects)
       applySnapshot(result.snapshot)
+      setIsProjectDirty(true)
       const created = result.snapshot.nodes.find((node) => node.id === result.targetNodeId)
       if (created) {
         selectNode(created.id)
@@ -425,18 +481,27 @@ function GraphChatApp() {
   }
 
   async function removeSelected() {
-    if (!selectedNode) return
-    const result = await window.graphChat.deleteNode(selectedNode.id)
-    setProjects(result.projects)
-    applySnapshot(result.snapshot)
+    if (!selectedNode || !snapshotRef.current) return
+    const snapshot = snapshotRef.current
+    applySnapshot({
+      ...snapshot,
+      nodes: snapshot.nodes.filter((node) => node.id !== selectedNode.id),
+      edges: snapshot.edges.filter((edge) => edge.sourceId !== selectedNode.id && edge.targetId !== selectedNode.id)
+    })
+    setIsProjectDirty(true)
     setNodeMenu(null)
     setStatus('Node deleted')
   }
 
   async function removeNode(nodeId: string) {
-    const result = await window.graphChat.deleteNode(nodeId)
-    setProjects(result.projects)
-    applySnapshot(result.snapshot)
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
+    applySnapshot({
+      ...snapshot,
+      nodes: snapshot.nodes.filter((node) => node.id !== nodeId),
+      edges: snapshot.edges.filter((edge) => edge.sourceId !== nodeId && edge.targetId !== nodeId)
+    })
+    setIsProjectDirty(true)
     setNodeMenu(null)
     setStatus('Node deleted')
   }
@@ -444,13 +509,15 @@ function GraphChatApp() {
   async function clearNode(nodeId: string) {
     const graphNode = snapshotRef.current?.nodes.find((node) => node.id === nodeId)
     if (!graphNode) return
-    const updated = await window.graphChat.updateNode({
-      id: nodeId,
+    const updated = {
+      ...graphNode,
       content: '',
       isGenerated: false,
-      generationMeta: null
-    })
+      generationMeta: null,
+      updatedAt: new Date().toISOString()
+    }
     mutateLocalNode(updated)
+    setIsProjectDirty(true)
     if (reader?.nodeId === nodeId) {
       setReader({ ...reader, content: '' })
     }
@@ -459,33 +526,34 @@ function GraphChatApp() {
   }
 
   async function duplicateNode(nodeId: string, options?: { position?: { x: number; y: number }; clearTextContent?: boolean }) {
-    const graphNode = snapshotRef.current?.nodes.find((node) => node.id === nodeId)
-    if (!graphNode) return
+    const snapshot = snapshotRef.current
+    const graphNode = snapshot?.nodes.find((node) => node.id === nodeId)
+    if (!snapshot || !graphNode) return
     const duplicatedContent = options?.clearTextContent && graphNode.type === 'text' ? '' : graphNode.content
-    const result = await window.graphChat.createNode({
-      projectId: graphNode.projectId,
-      type: graphNode.type,
+    const now = new Date().toISOString()
+    const duplicatedNode: GraphNodeRecord = {
+      ...graphNode,
+      id: crypto.randomUUID(),
       title: `${graphNode.title} copy`,
       content: duplicatedContent,
-      instruction: graphNode.instruction,
-      model: graphNode.model,
       isGenerated: false,
       generationMeta: null,
-      position: options?.position ?? { x: graphNode.position.x + 60, y: graphNode.position.y + 60 },
-      size: graphNode.size
-    })
-    setProjects(result.projects)
-    applySnapshot(result.snapshot)
-    selectNode(result.node.id)
+      createdAt: now,
+      updatedAt: now,
+      position: options?.position ?? { x: graphNode.position.x + 60, y: graphNode.position.y + 60 }
+    }
+    applySnapshot({ ...snapshot, nodes: [...snapshot.nodes, duplicatedNode] })
+    setIsProjectDirty(true)
+    selectNode(duplicatedNode.id)
     setNodeMenu(null)
     setStatus('Node duplicated')
   }
 
   async function removeEdge(edgeId: string) {
-    if (!activeProjectId) return
-    const result = await window.graphChat.deleteEdge(edgeId, activeProjectId)
-    setProjects(result.projects)
-    applySnapshot(result.snapshot)
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
+    applySnapshot({ ...snapshot, edges: snapshot.edges.filter((edge) => edge.id !== edgeId) })
+    setIsProjectDirty(true)
     setSelectedEdgeId(null)
     setStatus('Connection removed')
   }
@@ -573,6 +641,7 @@ function GraphChatApp() {
         setSelectedEdgeId(change.selected ? change.id : null)
         if (change.selected) {
           setSelectedNodeId(null)
+          setEditingNodeId(null)
           setStatus('Connection selected. Press Delete to remove.')
         }
       }
@@ -712,10 +781,23 @@ function GraphChatApp() {
       <>
       <aside style={{ width: leftSidebarWidth }} className="flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
         <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-          <div className="text-sm font-semibold tracking-[0.02em] text-[var(--text-dim)]">Projects</div>
-          <IconButton onClick={() => void createProject()} label="Create project">
-            <NewFolderIcon className="h-4 w-4" />
-          </IconButton>
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-semibold tracking-[0.02em] text-[var(--text-dim)]">Projects</div>
+            {isProjectDirty && <span className="text-xs text-[var(--accent)]">●</span>}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => void saveProject()}
+              disabled={!isProjectDirty}
+              className="rounded-[8px] border border-[var(--border-strong)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-dim)] transition hover:bg-white/5 hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-dim)]"
+            >
+              Save
+            </button>
+            <IconButton onClick={() => void createProject()} label="Create project">
+              <NewFolderIcon className="h-4 w-4" />
+            </IconButton>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-3">
           {projects.map((project) => (
@@ -1042,10 +1124,30 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-dim)]">{displayNodeTypeLabel(node.type)}</div>
             <div className="font-serif text-lg font-semibold">{node.title || 'Untitled'}</div>
           </button>
-          {node.type === 'text' && <button className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]" onClick={() => data.onGenerate(node.id)}>生成</button>}
+          {node.type === 'text' && (
+            <button
+              type="button"
+              className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]"
+              onMouseDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                if (data.isEditing) {
+                  commitDraftContent()
+                }
+                data.onGenerate(node.id)
+              }}
+            >
+              生成
+            </button>
+          )}
         </div>
         {data.isEditing ? (
           <textarea
+            value={draftContent}
             onChange={(event) => setDraftContent(event.target.value)}
             onCompositionStart={() => setIsComposing(true)}
             onCompositionEnd={(event) => {

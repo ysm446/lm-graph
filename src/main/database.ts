@@ -153,6 +153,45 @@ export class GraphRepository {
     return this.getProjectSnapshot(project.id)
   }
 
+  saveProjectSnapshot(snapshot: ProjectSnapshot): ProjectSnapshot {
+    const now = new Date().toISOString()
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?').run(snapshot.project.name, now, snapshot.project.id)
+      this.db.prepare('DELETE FROM edges WHERE project_id = ?').run(snapshot.project.id)
+      this.db.prepare('DELETE FROM nodes WHERE project_id = ?').run(snapshot.project.id)
+
+      const insertNode = this.db.prepare(
+        `INSERT INTO nodes (id, project_id, type, title, content, instruction, model, is_generated, generation_meta, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      const insertPosition = this.db.prepare('INSERT INTO node_positions (node_id, x, y, width, height) VALUES (?, ?, ?, ?, ?)')
+      const insertEdge = this.db.prepare('INSERT INTO edges (id, project_id, source_id, target_id) VALUES (?, ?, ?, ?)')
+
+      for (const node of snapshot.nodes) {
+        insertNode.run(
+          node.id,
+          snapshot.project.id,
+          node.type,
+          node.title,
+          node.content,
+          node.instruction,
+          node.model,
+          node.isGenerated ? 1 : 0,
+          node.generationMeta ? JSON.stringify(node.generationMeta) : null,
+          node.createdAt,
+          node.updatedAt
+        )
+        insertPosition.run(node.id, node.position.x, node.position.y, node.size.width, node.size.height)
+      }
+
+      for (const edge of snapshot.edges) {
+        insertEdge.run(edge.id, snapshot.project.id, edge.sourceId, edge.targetId)
+      }
+    })()
+
+    return this.getProjectSnapshot(snapshot.project.id)
+  }
+
   createNode(input: CreateNodeInput): GraphNodeRecord {
     const now = new Date().toISOString()
     const id = randomUUID()
