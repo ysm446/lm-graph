@@ -16,6 +16,7 @@ const defaultUiPreferences: UiPreferences = {
   isSidebarOpen: true,
   isInspectorOpen: true,
   isMiniMapVisible: true,
+  isSnapToGridEnabled: true,
   leftSidebarWidth: 288,
   rightInspectorWidth: 380,
   generalSections: {
@@ -472,9 +473,11 @@ async function saveUiPreferences(input: Partial<UiPreferences>): Promise<UiPrefe
 function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
   return {
     contextLength: input.contextLength ?? defaultUiPreferences.contextLength,
+    temperature: input.temperature ?? defaultUiPreferences.temperature,
     isSidebarOpen: input.isSidebarOpen ?? defaultUiPreferences.isSidebarOpen,
     isInspectorOpen: input.isInspectorOpen ?? defaultUiPreferences.isInspectorOpen,
     isMiniMapVisible: input.isMiniMapVisible ?? defaultUiPreferences.isMiniMapVisible,
+    isSnapToGridEnabled: input.isSnapToGridEnabled ?? defaultUiPreferences.isSnapToGridEnabled,
     leftSidebarWidth: input.leftSidebarWidth ?? defaultUiPreferences.leftSidebarWidth,
     rightInspectorWidth: input.rightInspectorWidth ?? defaultUiPreferences.rightInspectorWidth,
     generalSections: {

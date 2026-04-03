@@ -76,9 +76,11 @@ export interface AppSettings {
 
 export interface UiPreferences {
   contextLength: number
+  temperature: number
   isSidebarOpen: boolean
   isInspectorOpen: boolean
   isMiniMapVisible: boolean
+  isSnapToGridEnabled: boolean
   leftSidebarWidth: number
   rightInspectorWidth: number
   generalSections: {

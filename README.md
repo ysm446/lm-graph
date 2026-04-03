@@ -27,7 +27,7 @@ This project expects local runtime assets that are intentionally not committed:
 
 - `models/`
   - example: `models/Qwen3.5-27B-GGUF/Qwen3.5-27B-Q6_K.gguf`
-- `bin/llama-server/llama-b8466-bin-win-cuda-13.1-x64/`
+- `bin/llama-server/llama-b8648-bin-win-cuda-13.1-x64/`
   - must contain `llama-server.exe` and related DLLs
 
 The app scans `models/` for GGUF files and lets you choose them from the header model selector.

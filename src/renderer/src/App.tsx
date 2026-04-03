@@ -67,6 +67,7 @@ const MIN_LEFT_SIDEBAR_WIDTH = 220
 const MAX_LEFT_SIDEBAR_WIDTH = 520
 const MIN_RIGHT_INSPECTOR_WIDTH = 300
 const MAX_RIGHT_INSPECTOR_WIDTH = 560
+const GRID_SIZE = 20
 
 function App() {
   return (
@@ -98,6 +99,7 @@ function GraphChatApp() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [isInspectorOpen, setIsInspectorOpen] = useState(true)
   const [isMiniMapVisible, setIsMiniMapVisible] = useState(true)
+  const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(DEFAULT_LEFT_SIDEBAR_WIDTH)
   const [rightInspectorWidth, setRightInspectorWidth] = useState(DEFAULT_RIGHT_INSPECTOR_WIDTH)
   const [generalSections, setGeneralSections] = useState({ context: true, interface: true })
@@ -118,6 +120,7 @@ function GraphChatApp() {
       setIsSidebarOpen(uiPreferences.isSidebarOpen)
       setIsInspectorOpen(uiPreferences.isInspectorOpen)
       setIsMiniMapVisible(uiPreferences.isMiniMapVisible)
+      setIsSnapToGridEnabled(uiPreferences.isSnapToGridEnabled)
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
       setRightInspectorWidth(uiPreferences.rightInspectorWidth)
       setGeneralSections(uiPreferences.generalSections)
@@ -138,12 +141,13 @@ function GraphChatApp() {
       isSidebarOpen,
       isInspectorOpen,
       isMiniMapVisible,
+      isSnapToGridEnabled,
       leftSidebarWidth,
       rightInspectorWidth,
       generalSections
     }
     void window.graphChat.savePreferences(payload)
-  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, leftSidebarWidth, rightInspectorWidth, generalSections])
+  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, leftSidebarWidth, rightInspectorWidth, generalSections])
 
   useEffect(() => {
     const offDelta = window.graphChat.onGenerationDelta(({ nodeId, content }) => {
@@ -384,7 +388,7 @@ function GraphChatApp() {
   async function addNode(type: NodeType, position?: { x: number; y: number }) {
     const snapshot = snapshotRef.current
     if (!activeProjectId || !snapshot) return
-    const base = position ?? (selectedNode?.position ?? { x: 120, y: 120 })
+    const base = normalizePosition(position ?? (selectedNode?.position ?? { x: 120, y: 120 }), isSnapToGridEnabled)
     const now = new Date().toISOString()
     const node: GraphNodeRecord = {
       id: crypto.randomUUID(),
@@ -399,7 +403,7 @@ function GraphChatApp() {
       generationMeta: null,
       createdAt: now,
       updatedAt: now,
-      position: position ? base : { x: base.x + 40, y: base.y + 160 },
+      position: position ? base : normalizePosition({ x: base.x + 40, y: base.y + 160 }, isSnapToGridEnabled),
       size: { width: 480, height: 360 }
     }
     applySnapshot({ ...snapshot, nodes: [...snapshot.nodes, node] })
@@ -422,7 +426,7 @@ function GraphChatApp() {
     const graphNode = snapshotRef.current?.nodes.find((node) => node.id === nodeId)
     if (!graphNode) return
     selectNode(nodeId)
-    const updated = { ...graphNode, position: input.position, size: input.size }
+    const updated = { ...graphNode, position: normalizePosition(input.position, isSnapToGridEnabled), size: input.size }
     mutateLocalNode(updated)
     await persistNode(updated)
     setStatus('Node resized')
@@ -676,7 +680,7 @@ function GraphChatApp() {
     for (const change of positionChanges) {
       const graphNode = snapshotRef.current?.nodes.find((node) => node.id === change.id)
       if (!graphNode || !change.position) continue
-      const updated = { ...graphNode, position: change.position }
+      const updated = { ...graphNode, position: normalizePosition(change.position, isSnapToGridEnabled) }
       mutateLocalNode(updated)
       await persistNode(updated)
     }
@@ -702,6 +706,11 @@ function GraphChatApp() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableElement(event.target)) return
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void saveProject()
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && selectedNode) {
         event.preventDefault()
         copiedNodeIdRef.current = selectedNode.id
@@ -1033,6 +1042,10 @@ function GraphChatApp() {
           proOptions={{ hideAttribution: true }}
           style={{ backgroundColor: 'var(--bg-canvas)' }}
           fitView
+          minZoom={0.1}
+          maxZoom={2}
+          snapToGrid={isSnapToGridEnabled}
+          snapGrid={[GRID_SIZE, GRID_SIZE]}
           onPaneContextMenu={openCanvasMenu}
             onPaneClick={() => {
               setCanvasMenu(null)
@@ -1065,7 +1078,7 @@ function GraphChatApp() {
           defaultEdgeOptions={{ style: edgeStyleForHandle('text'), interactionWidth: 28 }}
         >
           {isMiniMapVisible && <MiniMap pannable zoomable style={{ backgroundColor: '#181b23' }} nodeColor={(node) => getMiniMapNodeColor(node as Node<AppNodeData>)} />}
-          <Background gap={20} size={1.4} color="#394154" />
+          <Background gap={GRID_SIZE} size={1.4} color="#394154" />
           <Controls />
         </ReactFlow>
       </main>
@@ -1096,9 +1109,11 @@ function GraphChatApp() {
           <GeneralInspector
             settings={settings}
             isMiniMapVisible={isMiniMapVisible}
+            isSnapToGridEnabled={isSnapToGridEnabled}
             sections={generalSections}
             onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
             onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
+            onToggleSnapToGrid={() => setIsSnapToGridEnabled((current) => !current)}
             onChangeContextLength={(value) => void handleContextLengthChange(value)}
             onChangeTemperature={(value) => void handleTemperatureChange(value)}
           />
@@ -1327,17 +1342,21 @@ function NodeEditor({
 function GeneralInspector({
   settings,
   isMiniMapVisible,
+  isSnapToGridEnabled,
   sections,
   onToggleSection,
   onToggleMiniMap,
+  onToggleSnapToGrid,
   onChangeContextLength,
   onChangeTemperature
 }: {
   settings: AppSettings | null
   isMiniMapVisible: boolean
+  isSnapToGridEnabled: boolean
   sections: { context: boolean; interface: boolean }
   onToggleSection: (section: 'context' | 'interface') => void
   onToggleMiniMap: () => void
+  onToggleSnapToGrid: () => void
   onChangeContextLength: (value: number) => void
   onChangeTemperature: (value: number) => void
 }) {
@@ -1468,6 +1487,20 @@ function GeneralInspector({
           >
             <span
               className={`absolute top-[3px] h-[16px] w-[16px] rounded-full bg-[var(--text)] transition ${isMiniMapVisible ? 'left-[19px]' : 'left-[3px]'}`}
+            />
+          </button>
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--text-dim)]">Snap to Grid</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isSnapToGridEnabled}
+            onClick={onToggleSnapToGrid}
+            className={`relative h-[22px] w-[38px] rounded-full transition ${isSnapToGridEnabled ? 'bg-[rgba(124,90,247,0.24)]' : 'bg-[rgba(28,31,43,0.88)]'}`}
+          >
+            <span
+              className={`absolute top-[3px] h-[16px] w-[16px] rounded-full bg-[var(--text)] transition ${isSnapToGridEnabled ? 'left-[19px]' : 'left-[3px]'}`}
             />
           </button>
         </div>
@@ -1733,6 +1766,18 @@ function getMiniMapNodeColor(node: Node<AppNodeData>): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+function snapPositionToGrid(position: { x: number; y: number }) {
+  return {
+    x: Math.round(position.x / GRID_SIZE) * GRID_SIZE,
+    y: Math.round(position.y / GRID_SIZE) * GRID_SIZE
+  }
+}
+
+
+function normalizePosition(position: { x: number; y: number }, shouldSnap: boolean) {
+  return shouldSnap ? snapPositionToGrid(position) : position
 }
 
 function isEditableElement(target: EventTarget | null): boolean {
