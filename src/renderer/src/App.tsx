@@ -223,6 +223,18 @@ function GraphChatApp() {
     )
   }, [selectedNodeId, editingNodeId, setNodes])
 
+  useEffect(() => {
+    setEdges((current) =>
+      current.map((edge) => ({
+        ...edge,
+        selected: edge.id === selectedEdgeId,
+        style: edge.id === selectedEdgeId
+          ? { strokeWidth: 3.5, stroke: '#7c5af7' }
+          : { strokeWidth: 2.6, stroke: '#3a3f50' }
+      }))
+    )
+  }, [selectedEdgeId, setEdges])
+
   const selectedNode = useMemo(() => snapshotRef.current?.nodes.find((node) => node.id === selectedNodeId) ?? null, [selectedNodeId, nodes])
   const nodeTypes = useMemo(() => ({ graphNode: GraphNodeCard }), [])
 
@@ -280,8 +292,8 @@ function GraphChatApp() {
       selected: edge.id === selectedEdgeId,
       animated: false,
       style: edge.id === selectedEdgeId
-        ? { strokeWidth: 3, stroke: '#7c5af7' }
-        : { strokeWidth: 2, stroke: '#3a3f50' }
+        ? { strokeWidth: 3.5, stroke: '#7c5af7' }
+        : { strokeWidth: 2.6, stroke: '#3a3f50' }
     })))
     setSelectedNodeId((current) => snapshot.nodes.some((node) => node.id === current) ? current : snapshot.nodes[0]?.id ?? null)
     setSelectedEdgeId((current) => snapshot.edges.some((edge) => edge.id === current) ? current : null)
@@ -1012,7 +1024,7 @@ function GraphChatApp() {
           onEdgeDoubleClick={(_, edge) => {
             void removeEdge(edge.id)
           }}
-          defaultEdgeOptions={{ style: { strokeWidth: 2, stroke: '#3a3f50' } }}
+          defaultEdgeOptions={{ style: { strokeWidth: 2.6, stroke: '#3a3f50' }, interactionWidth: 28 }}
         >
           {isMiniMapVisible && <MiniMap pannable zoomable style={{ backgroundColor: '#181b23' }} nodeColor={(node) => getMiniMapNodeColor(node as Node<AppNodeData>)} />}
           <Background gap={20} size={1.4} color="#394154" />
@@ -1588,6 +1600,30 @@ function collectReaderText(nodeId: string, nodes: GraphNodeRecord[], edges: Grap
     .map((node) => node.content.trim())
     .filter(Boolean)
     .join('\n\n')
+}
+
+function wouldCreateCycle(sourceId: string, targetId: string, edges: GraphEdgeRecord[]): boolean {
+  const childMap = new Map<string, string[]>()
+  for (const edge of edges) {
+    const children = childMap.get(edge.sourceId) ?? []
+    children.push(edge.targetId)
+    childMap.set(edge.sourceId, children)
+  }
+
+  const stack = [targetId]
+  const visited = new Set<string>()
+
+  while (stack.length > 0) {
+    const nodeId = stack.pop()
+    if (!nodeId || visited.has(nodeId)) continue
+    if (nodeId === sourceId) return true
+    visited.add(nodeId)
+    for (const childId of childMap.get(nodeId) ?? []) {
+      stack.push(childId)
+    }
+  }
+
+  return false
 }
 
 function traverse(nodeId: string, nodeMap: Map<string, GraphNodeRecord>, parentMap: Map<string, string[]>, visited: Set<string>): GraphNodeRecord[] {

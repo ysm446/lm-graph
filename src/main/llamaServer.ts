@@ -1,5 +1,6 @@
 ﻿import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { basename, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { app } from 'electron'
@@ -13,6 +14,7 @@ export class LlamaServerManager {
   private readonly rootDir: string
   private readonly serverPath: string
   private readonly modelsDir: string
+  private port = DEFAULT_PORT
   private settings: AppSettings
 
   constructor() {
@@ -83,6 +85,7 @@ export class LlamaServerManager {
   }
 
   async ensureRunning(): Promise<AppSettings> {
+    await this.ensureAvailablePort()
     if (await this.isHealthy()) {
       return this.getSettings()
     }
@@ -104,7 +107,7 @@ export class LlamaServerManager {
   private buildSettings(selectedModel: ModelOption, availableModels = this.listModels(), contextLength = this.settings?.contextLength ?? DEFAULT_CONTEXT_LENGTH): AppSettings {
     accessSync(this.serverPath, constants.F_OK)
     return {
-      llamaBaseUrl: `http://127.0.0.1:${DEFAULT_PORT}`,
+      llamaBaseUrl: `http://127.0.0.1:${this.port}`,
       llamaModelAlias: toModelAlias(selectedModel.name),
       selectedModelPath: selectedModel.path,
       selectedModelName: selectedModel.name,
@@ -123,7 +126,7 @@ export class LlamaServerManager {
         '--host',
         '127.0.0.1',
         '--port',
-        String(DEFAULT_PORT),
+        String(this.port),
         '--model',
         resolvedModelPath,
         '--alias',
@@ -153,6 +156,18 @@ export class LlamaServerManager {
     })
   }
 
+  private async ensureAvailablePort(): Promise<void> {
+    if (this.process) return
+    const availablePort = await findAvailablePort(DEFAULT_PORT)
+    if (availablePort === this.port) return
+    this.port = availablePort
+    const currentModel = this.listModels().find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath))
+    if (!currentModel) {
+      throw new Error('Selected model was not found in models/.')
+    }
+    this.settings = this.buildSettings(currentModel, this.listModels(), this.settings.contextLength)
+  }
+
   private async waitForHealthy(): Promise<void> {
     const deadline = Date.now() + 90_000
     while (Date.now() < deadline) {
@@ -170,6 +185,27 @@ export class LlamaServerManager {
       return false
     }
   }
+}
+
+async function findAvailablePort(startPort: number, attempts = 20): Promise<number> {
+  for (let offset = 0; offset < attempts; offset += 1) {
+    const candidate = startPort + offset
+    if (await canListen(candidate)) {
+      return candidate
+    }
+  }
+  throw new Error(`No available port was found for llama.cpp starting at ${startPort}.`)
+}
+
+function canListen(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once('error', () => resolve(false))
+    server.once('listening', () => {
+      server.close(() => resolve(true))
+    })
+    server.listen(port, '127.0.0.1')
+  })
 }
 
 function findDefaultModel(models: ModelOption[]): ModelOption {
@@ -194,5 +230,3 @@ function walkFiles(dir: string): string[] {
   }
   return files
 }
-
-
