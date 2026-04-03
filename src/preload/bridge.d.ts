@@ -2,6 +2,8 @@ import type { AppSettings, GraphNodeRecord, ProjectRecord, ProjectSnapshot } fro
 
 export interface GraphChatApi {
   bootstrap(): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot; settings: AppSettings }>
+  listModels(): Promise<AppSettings>
+  selectModel(modelPath: string): Promise<{ settings: AppSettings }>
   createProject(name: string): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot }>
   renameProject(id: string, name: string): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot }>
   deleteProject(id: string): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot }>
@@ -15,6 +17,7 @@ export interface GraphChatApi {
     model?: string | null
     isGenerated?: boolean
     position?: { x: number; y: number }
+    size?: { width: number; height: number }
   }): Promise<{ node: GraphNodeRecord; snapshot: ProjectSnapshot; projects: ProjectRecord[] }>
   updateNode(input: {
     id: string
@@ -22,6 +25,7 @@ export interface GraphChatApi {
     content?: string
     instruction?: string | null
     position?: { x: number; y: number }
+    size?: { width: number; height: number }
     model?: string | null
     isGenerated?: boolean
   }): Promise<GraphNodeRecord>

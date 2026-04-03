@@ -22,6 +22,7 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  window.setMenuBarVisibility(false)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -47,6 +48,11 @@ function registerIpc(): void {
   ipcMain.handle('bootstrap', async () => {
     const snapshot = repository.ensureDefaultProject()
     return { projects: repository.listProjects(), snapshot, settings: llamaServer.getSettings() }
+  })
+  ipcMain.handle('models:list', async () => llamaServer.getSettings())
+  ipcMain.handle('models:select', async (_event, modelPath: string) => {
+    const settings = await llamaServer.selectModel(modelPath)
+    return { settings }
   })
   ipcMain.handle('project:create', async (_event, name: string) => {
     const project = repository.createProject(name)
@@ -106,30 +112,22 @@ function registerIpc(): void {
       throw new Error('Generation can only start from a text node.')
     }
     const context = collectContext(payload.sourceNodeId, snapshot.nodes, snapshot.edges)
-    const newNode = repository.createNode({
-      projectId: payload.projectId,
-      type: 'text',
-      title: sourceNode.title ? `${sourceNode.title} ->` : 'Generated',
-      model: llamaServer.getSettings().llamaModelAlias,
-      isGenerated: true,
-      position: { x: sourceNode.position.x + 360, y: sourceNode.position.y }
-    })
-    repository.createEdge(payload.projectId, payload.sourceNodeId, newNode.id)
     const generationId = randomUUID()
     const controller = new AbortController()
     generationControllers.set(generationId, controller)
     void streamGeneration({
       event,
       generationId,
-      targetNode: newNode,
+      targetNode: sourceNode,
       projectId: payload.projectId,
       systemPrompt: context.systemPrompt,
       userContext: context.userContext,
+      initialContent: '',
       signal: controller.signal
     }).finally(() => generationControllers.delete(generationId))
     return {
       generationId,
-      targetNodeId: newNode.id,
+      targetNodeId: sourceNode.id,
       snapshot: repository.getProjectSnapshot(payload.projectId),
       projects: repository.listProjects()
     }
@@ -143,6 +141,7 @@ async function streamGeneration(input: {
   projectId: string
   systemPrompt: string
   userContext: string
+  initialContent: string
   signal: AbortSignal
 }): Promise<void> {
   try {
@@ -154,7 +153,7 @@ async function streamGeneration(input: {
         stream: true,
         messages: [
           { role: 'system', content: input.systemPrompt },
-          { role: 'user', content: `${input.userContext}\n\n---\n以上の文脈に続けて書いてください。` }
+          { role: 'user', content: input.userContext + '\\n\\n---\\n以上の文脈を踏まえて、本文を書き直してください。' }
         ]
       }),
       signal: input.signal
@@ -165,7 +164,7 @@ async function streamGeneration(input: {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
-    let content = ''
+    let content = input.initialContent
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -181,16 +180,23 @@ async function streamGeneration(input: {
           const delta = parsed.choices?.[0]?.delta?.content ?? ''
           if (!delta) continue
           content += delta
+          const visibleContent = stripThinkTags(content)
           repository.updateNode({
             id: input.targetNode.id,
-            content,
+            content: visibleContent,
             isGenerated: true,
             model: llamaServer.getSettings().llamaModelAlias
           })
-          input.event.sender.send('generation:delta', { generationId: input.generationId, nodeId: input.targetNode.id, content })
+          input.event.sender.send('generation:delta', { generationId: input.generationId, nodeId: input.targetNode.id, content: visibleContent })
         }
       }
     }
+    repository.updateNode({
+      id: input.targetNode.id,
+      content: stripThinkTags(content),
+      isGenerated: true,
+      model: llamaServer.getSettings().llamaModelAlias
+    })
     input.event.sender.send('generation:done', {
       generationId: input.generationId,
       nodeId: input.targetNode.id,
@@ -212,17 +218,47 @@ function collectContext(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEd
     parentMap.set(edge.targetId, parents)
   }
   const ordered = traverseUpstream(nodeId, nodeMap, parentMap, new Set<string>())
-  const systemParts = ordered.filter((node) => node.type === 'instruction').map((node) => node.content.trim()).filter(Boolean)
-  const userParts = ordered
-    .filter((node) => node.type === 'text' || node.type === 'context')
-    .map((node) => node.content.trim())
-    .filter(Boolean)
-  const localInstructions = ordered.map((node) => node.instruction?.trim()).filter((value): value is string => Boolean(value))
   const self = nodeMap.get(nodeId)
+  const upstream = ordered.filter((node) => node.id !== nodeId)
+  const directParents = (parentMap.get(nodeId) ?? []).map((id) => nodeMap.get(id)).filter((value): value is GraphNodeRecord => Boolean(value))
+  const systemParts = upstream.filter((node) => node.type === 'instruction').map((node) => node.content.trim()).filter(Boolean)
+  const localInstructions = ordered.map((node) => node.instruction?.trim()).filter((value): value is string => Boolean(value))
+  const directParentTexts = directParents
+    .filter((node) => node.type === 'text' && node.content.trim())
+    .map((node, index) => `# Direct Parent Text ${index + 1}${node.title ? `: ${node.title}` : ''}
+${node.content.trim()}`)
+  const upstreamTexts = upstream
+    .filter((node) => node.type === 'text' && node.content.trim())
+    .map((node, index) => `# Upstream Text ${index + 1}${node.title ? `: ${node.title}` : ''}
+${node.content.trim()}`)
+  const contextParts = upstream
+    .filter((node) => node.type === 'context' && node.content.trim())
+    .map((node, index) => `# Context ${index + 1}${node.title ? `: ${node.title}` : ''}
+${node.content.trim()}`)
+  const targetInfo = self
+    ? `# Target Node${self.title ? `: ${self.title}` : ''}
+このノードの本文を書き換えてください。`
+    : `# Target Node
+このノードの本文を書き換えてください。`
+
   return {
     systemPrompt: [...systemParts, ...localInstructions].join('\n\n') || 'You are a helpful writing assistant.',
-    userContext: userParts.join('\n\n') || self?.content || self?.title || '空の文脈から続きを生成してください。'
+    userContext: [
+      directParentTexts.length > 0 ? '以下の Direct Parent Text を最優先の素材として扱ってください。' : '',
+      ...directParentTexts,
+      ...upstreamTexts,
+      ...contextParts,
+      targetInfo
+    ].filter(Boolean).join('\n\n') || self?.title || '空の文脈から本文を書き直してください。'
   }
+}
+
+function stripThinkTags(content: string): string {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimStart()
 }
 
 function traverseUpstream(

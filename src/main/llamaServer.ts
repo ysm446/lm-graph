@@ -1,33 +1,78 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { accessSync, constants, existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { app } from 'electron'
-import type { AppSettings } from './types'
+import type { AppSettings, ModelOption } from './types'
 
 const DEFAULT_PORT = 8080
 
 export class LlamaServerManager {
   private process: ChildProcessWithoutNullStreams | null = null
-  private readonly settings: AppSettings
+  private readonly rootDir: string
+  private readonly serverPath: string
+  private readonly modelsDir: string
+  private settings: AppSettings
 
   constructor() {
-    this.settings = detectSettings()
+    this.rootDir = app.isPackaged ? process.cwd() : app.getAppPath()
+    this.serverPath = join(this.rootDir, 'bin', 'llama-server', 'llama-b8466-bin-win-cuda-13.1-x64', 'llama-server.exe')
+    this.modelsDir = join(this.rootDir, 'models')
+    this.settings = this.buildSettings(findDefaultModel(this.listModels()))
   }
 
   getSettings(): AppSettings {
-    return this.settings
+    return {
+      ...this.settings,
+      availableModels: [...this.settings.availableModels]
+    }
+  }
+
+  listModels(): ModelOption[] {
+    if (!existsSync(this.modelsDir)) {
+      throw new Error(`Models directory was not found: ${this.modelsDir}`)
+    }
+    const candidates = walkFiles(this.modelsDir)
+      .filter((file) => file.toLowerCase().endsWith('.gguf'))
+      .filter((file) => !/mmproj/i.test(file))
+      .map((file) => ({
+        path: file,
+        name: relative(this.modelsDir, file).replace(/\\/g, '/')
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name))
+
+    if (candidates.length === 0) {
+      throw new Error('No GGUF model file was found in models/.')
+    }
+    return candidates
+  }
+
+  async selectModel(modelPath: string): Promise<AppSettings> {
+    const resolvedPath = resolve(modelPath)
+    const availableModels = this.listModels()
+    const selected = availableModels.find((model) => resolve(model.path) === resolvedPath)
+    if (!selected) {
+      throw new Error('Selected model was not found in models/.')
+    }
+
+    const shouldRestart = this.process !== null
+    if (shouldRestart) {
+      await this.stop()
+    }
+    this.settings = this.buildSettings(selected, availableModels)
+    await this.ensureRunning()
+    return this.getSettings()
   }
 
   async ensureRunning(): Promise<AppSettings> {
     if (await this.isHealthy()) {
-      return this.settings
+      return this.getSettings()
     }
     if (!this.process) {
       this.start()
     }
     await this.waitForHealthy()
-    return this.settings
+    return this.getSettings()
   }
 
   async stop(): Promise<void> {
@@ -38,8 +83,21 @@ export class LlamaServerManager {
     await delay(400)
   }
 
+  private buildSettings(selectedModel: ModelOption, availableModels = this.listModels()): AppSettings {
+    accessSync(this.serverPath, constants.F_OK)
+    return {
+      llamaBaseUrl: `http://127.0.0.1:${DEFAULT_PORT}`,
+      llamaModelAlias: toModelAlias(selectedModel.name),
+      selectedModelPath: selectedModel.path,
+      selectedModelName: selectedModel.name,
+      availableModels,
+      resolvedModelPath: selectedModel.path,
+      resolvedServerPath: this.serverPath
+    }
+  }
+
   private start(): void {
-    const { resolvedServerPath, resolvedModelPath } = this.settings
+    const { resolvedServerPath, resolvedModelPath, llamaModelAlias } = this.settings
     this.process = spawn(
       resolvedServerPath,
       [
@@ -50,9 +108,17 @@ export class LlamaServerManager {
         '--model',
         resolvedModelPath,
         '--alias',
-        this.settings.llamaModelAlias,
+        llamaModelAlias,
         '--ctx-size',
         '8192',
+        '--flash-attn',
+        'on',
+        '--reasoning',
+        'off',
+        '--reasoning-format',
+        'none',
+        '--chat-template-kwargs',
+        '{"thinking":false}',
         '--n-gpu-layers',
         '999'
       ],
@@ -87,33 +153,13 @@ export class LlamaServerManager {
   }
 }
 
-function detectSettings(): AppSettings {
-  const rootDir = app.isPackaged ? process.cwd() : app.getAppPath()
-  const serverDir = join(rootDir, 'bin', 'llama-server', 'llama-b8466-bin-win-cuda-13.1-x64')
-  const serverPath = join(serverDir, 'llama-server.exe')
-  const modelsDir = join(rootDir, 'models')
-  const modelPath = findModelFile(modelsDir)
-  accessSync(serverPath, constants.F_OK)
-  return {
-    llamaBaseUrl: `http://127.0.0.1:${DEFAULT_PORT}`,
-    llamaModelAlias: 'qwen3.5-27b',
-    resolvedModelPath: modelPath,
-    resolvedServerPath: serverPath
-  }
+function findDefaultModel(models: ModelOption[]): ModelOption {
+  const preferred = models.find((model) => /qwen3\.5-27b-q6_k\.gguf$/i.test(model.name))
+  return preferred ?? models[0]
 }
 
-function findModelFile(modelsDir: string): string {
-  if (!existsSync(modelsDir)) {
-    throw new Error(`Models directory was not found: ${modelsDir}`)
-  }
-  const candidates = walkFiles(modelsDir).filter((file) => file.toLowerCase().endsWith('.gguf'))
-  const preferred = candidates.find((file) => /qwen3\.5-27b-q6_k\.gguf$/i.test(file))
-  const fallback = candidates.find((file) => !/mmproj/i.test(file))
-  const modelPath = preferred ?? fallback
-  if (!modelPath) {
-    throw new Error('No GGUF model file was found in models/.')
-  }
-  return modelPath
+function toModelAlias(modelName: string): string {
+  return basename(modelName, '.gguf').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'local-model'
 }
 
 function walkFiles(dir: string): string[] {

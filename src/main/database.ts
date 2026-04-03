@@ -5,6 +5,9 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { GraphEdgeRecord, GraphNodeRecord, NodeType, ProjectRecord, ProjectSnapshot } from './types'
 
+const DEFAULT_NODE_WIDTH = 288
+const DEFAULT_NODE_HEIGHT = 180
+
 type NodeRow = {
   id: string
   project_id: string
@@ -18,6 +21,8 @@ type NodeRow = {
   updated_at: string
   x: number
   y: number
+  width: number
+  height: number
 }
 
 type EdgeRow = {
@@ -43,6 +48,7 @@ export interface CreateNodeInput {
   model?: string | null
   isGenerated?: boolean
   position?: { x: number; y: number }
+  size?: { width: number; height: number }
 }
 
 export interface UpdateNodeInput {
@@ -51,6 +57,7 @@ export interface UpdateNodeInput {
   content?: string
   instruction?: string | null
   position?: { x: number; y: number }
+  size?: { width: number; height: number }
   model?: string | null
   isGenerated?: boolean
 }
@@ -96,6 +103,7 @@ export class GraphRepository {
         y REAL NOT NULL
       );
     `)
+    this.ensureNodePositionColumns()
   }
 
   listProjects(): ProjectRecord[] {
@@ -143,6 +151,7 @@ export class GraphRepository {
     const now = new Date().toISOString()
     const id = randomUUID()
     const position = input.position ?? { x: 80, y: 80 }
+    const size = input.size ?? { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT }
     this.db.transaction(() => {
       this.db
         .prepare(
@@ -161,7 +170,7 @@ export class GraphRepository {
           now,
           now
         )
-      this.db.prepare('INSERT INTO node_positions (node_id, x, y) VALUES (?, ?, ?)').run(id, position.x, position.y)
+      this.db.prepare('INSERT INTO node_positions (node_id, x, y, width, height) VALUES (?, ?, ?, ?, ?)').run(id, position.x, position.y, size.width, size.height)
       this.touchProject(input.projectId)
     })()
     return this.getNode(id)
@@ -185,13 +194,18 @@ export class GraphRepository {
           input.id
         )
       const position = input.position ?? current.position
+      const size = input.size ?? current.size
       this.db
         .prepare(
-          `INSERT INTO node_positions (node_id, x, y)
-           VALUES (?, ?, ?)
-           ON CONFLICT(node_id) DO UPDATE SET x = excluded.x, y = excluded.y`
+          `INSERT INTO node_positions (node_id, x, y, width, height)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(node_id) DO UPDATE SET
+             x = excluded.x,
+             y = excluded.y,
+             width = excluded.width,
+             height = excluded.height`
         )
-        .run(input.id, position.x, position.y)
+        .run(input.id, position.x, position.y, size.width, size.height)
       this.touchProject(current.projectId)
     })()
     return this.getNode(input.id)
@@ -235,7 +249,8 @@ export class GraphRepository {
     const row = this.db
       .prepare(
         `SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.model, n.is_generated, n.created_at, n.updated_at,
-                COALESCE(p.x, 80) AS x, COALESCE(p.y, 80) AS y
+                COALESCE(p.x, 80) AS x, COALESCE(p.y, 80) AS y,
+                COALESCE(p.width, ${DEFAULT_NODE_WIDTH}) AS width, COALESCE(p.height, ${DEFAULT_NODE_HEIGHT}) AS height
          FROM nodes n
          LEFT JOIN node_positions p ON p.node_id = n.id
          WHERE n.id = ?`
@@ -251,7 +266,8 @@ export class GraphRepository {
     const rows = this.db
       .prepare(
         `SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.model, n.is_generated, n.created_at, n.updated_at,
-                COALESCE(p.x, 80) AS x, COALESCE(p.y, 80) AS y
+                COALESCE(p.x, 80) AS x, COALESCE(p.y, 80) AS y,
+                COALESCE(p.width, ${DEFAULT_NODE_WIDTH}) AS width, COALESCE(p.height, ${DEFAULT_NODE_HEIGHT}) AS height
          FROM nodes n
          LEFT JOIN node_positions p ON p.node_id = n.id
          WHERE n.project_id = ?
@@ -284,6 +300,17 @@ export class GraphRepository {
   private touchProject(projectId: string): void {
     this.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), projectId)
   }
+
+  private ensureNodePositionColumns(): void {
+    const columns = this.db.prepare('PRAGMA table_info(node_positions)').all() as Array<{ name: string }>
+    const names = new Set(columns.map((column) => column.name))
+    if (!names.has('width')) {
+      this.db.exec(`ALTER TABLE node_positions ADD COLUMN width REAL NOT NULL DEFAULT ${DEFAULT_NODE_WIDTH};`)
+    }
+    if (!names.has('height')) {
+      this.db.exec(`ALTER TABLE node_positions ADD COLUMN height REAL NOT NULL DEFAULT ${DEFAULT_NODE_HEIGHT};`)
+    }
+  }
 }
 
 function mapProject(row: ProjectRow): ProjectRecord {
@@ -302,7 +329,8 @@ function mapNode(row: NodeRow): GraphNodeRecord {
     isGenerated: Boolean(row.is_generated),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    position: { x: row.x, y: row.y }
+    position: { x: row.x, y: row.y },
+    size: { width: row.width, height: row.height }
   }
 }
 
@@ -320,9 +348,7 @@ function wouldCreateCycle(sourceId: string, targetId: string, edges: GraphEdgeRe
     if (current === sourceId) {
       return true
     }
-    if (visited.has(current)) {
-      continue
-    }
+    if (visited.has(current)) continue
     visited.add(current)
     for (const next of outgoing.get(current) ?? []) {
       stack.push(next)

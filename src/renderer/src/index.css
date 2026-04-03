@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Segoe UI", sans-serif;
 }
 
@@ -16,9 +16,10 @@ body,
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(251, 191, 36, 0.18), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.16), transparent 35%),
-    #e7e0d3;
+    radial-gradient(circle at top left, rgba(251, 191, 36, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.12), transparent 32%),
+    linear-gradient(180deg, #151820 0%, #0b0d12 100%);
+  color: #e5e7eb;
 }
 
 button,
@@ -27,6 +28,42 @@ textarea {
   font: inherit;
 }
 
+input,
+textarea {
+  color: #e5e7eb;
+}
+
 textarea {
   resize: vertical;
+}
+
+.react-flow__minimap {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(71, 85, 105, 0.9);
+  border-radius: 16px;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(56, 189, 248, 0.08);
+  stroke: rgba(125, 211, 252, 0.45);
+  stroke-width: 1;
+}
+
+.react-flow__controls {
+  box-shadow: none;
+}
+
+.react-flow__controls,
+.react-flow__controls-button {
+  background: rgba(15, 23, 42, 0.94);
+  border-color: rgba(71, 85, 105, 0.9);
+  color: #e5e7eb;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(30, 41, 59, 0.98);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
 }

@@ -22,6 +22,10 @@ export interface GraphNodeRecord {
     x: number
     y: number
   }
+  size: {
+    width: number
+    height: number
+  }
 }
 
 export interface GraphEdgeRecord {
@@ -37,9 +41,17 @@ export interface ProjectSnapshot {
   edges: GraphEdgeRecord[]
 }
 
+export interface ModelOption {
+  name: string
+  path: string
+}
+
 export interface AppSettings {
   llamaBaseUrl: string
   llamaModelAlias: string
+  selectedModelPath: string
+  selectedModelName: string
+  availableModels: ModelOption[]
   resolvedModelPath: string
   resolvedServerPath: string
 }
