@@ -1330,8 +1330,9 @@ function NodeEditor({
         <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
         <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
         {estimatedContentTokens !== null && (
-          <div className="mt-2 text-xs text-[var(--text-faint)]">
-            Estimated tokens: {estimatedContentTokens}
+          <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--text-faint)]">
+            <MessageIcon className="h-3.5 w-3.5" />
+            <span>Estimated tokens: {estimatedContentTokens}</span>
           </div>
         )}
       </label>
