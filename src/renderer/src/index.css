@@ -163,6 +163,10 @@ textarea {
   background: #a4abc4;
 }
 
+.graph-slider-active::-webkit-slider-thumb {
+  background: #7c5af7;
+}
+
 .graph-slider::-moz-range-track {
   height: 5px;
   border: 0;
@@ -176,4 +180,8 @@ textarea {
   border: 0;
   border-radius: 999px;
   background: #a4abc4;
+}
+
+.graph-slider-active::-moz-range-thumb {
+  background: #7c5af7;
 }

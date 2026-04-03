@@ -656,6 +656,20 @@ function GraphChatApp() {
     }
   }
 
+  async function handleTemperatureChange(temperature: number) {
+    if (!settings) return
+    const normalized = Math.max(0, Math.min(2, Number(temperature.toFixed(1))))
+    if (normalized === settings.temperature) return
+    setError(null)
+    try {
+      const result = await window.graphChat.updateSettings({ temperature: normalized })
+      setSettings(result.settings)
+      setStatus(`Temperature set to ${normalized.toFixed(1)}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const handleNodeChanges: OnNodesChange<Node<AppNodeData>> = async (changes) => {
     onNodesChange(changes)
     const positionChanges = changes.filter((change) => change.type === 'position' && change.position && !change.dragging)
@@ -1086,6 +1100,7 @@ function GraphChatApp() {
             onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
             onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
             onChangeContextLength={(value) => void handleContextLengthChange(value)}
+            onChangeTemperature={(value) => void handleTemperatureChange(value)}
           />
         )}
         {reader && (
@@ -1286,7 +1301,7 @@ function NodeEditor({
         <div className="mb-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
           {node.generationMeta.tokensPerSecond !== null && <MetaItem icon={<BoltIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.tokensPerSecond.toFixed(1)} tok/sec`} />}
-          {node.generationMeta.completionTokens !== null && <MetaItem icon={<TokenIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} output`} />}
+          {node.generationMeta.completionTokens !== null && <MetaItem icon={<MessageIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} tokens`} />}
           {node.generationMeta.durationSeconds !== null && <MetaItem icon={<ClockIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.durationSeconds.toFixed(2)}s`} />}
           {node.generationMeta.finishReason && <MetaItem icon={<FlagIcon className="h-3.5 w-3.5" />} label={`Finish reason: ${node.generationMeta.finishReason}`} />}
           </div>
@@ -1315,7 +1330,8 @@ function GeneralInspector({
   sections,
   onToggleSection,
   onToggleMiniMap,
-  onChangeContextLength
+  onChangeContextLength,
+  onChangeTemperature
 }: {
   settings: AppSettings | null
   isMiniMapVisible: boolean
@@ -1323,10 +1339,18 @@ function GeneralInspector({
   onToggleSection: (section: 'context' | 'interface') => void
   onToggleMiniMap: () => void
   onChangeContextLength: (value: number) => void
+  onChangeTemperature: (value: number) => void
 }) {
   const defaultContextLength = 32768
+  const defaultTemperature = 0.8
+  const [pendingTemperature, setPendingTemperature] = useState(settings?.temperature ?? defaultTemperature)
   const [pendingContextLength, setPendingContextLength] = useState(settings?.contextLength ?? defaultContextLength)
+  const isTemperatureChanged = pendingTemperature !== defaultTemperature
   const isContextLengthChanged = pendingContextLength !== defaultContextLength
+
+  useEffect(() => {
+    setPendingTemperature(settings?.temperature ?? defaultTemperature)
+  }, [settings?.temperature])
 
   useEffect(() => {
     setPendingContextLength(settings?.contextLength ?? defaultContextLength)
@@ -1341,6 +1365,48 @@ function GeneralInspector({
         onToggle={() => onToggleSection('context')}
       >
         <label className="block">
+          <div className="mb-5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-[14px] text-[var(--text-dim)]">Temperature</span>
+              <div className="flex items-center gap-2">
+                {isTemperatureChanged && (
+                  <button
+                    type="button"
+                    aria-label="Reset temperature"
+                    title="Reset temperature"
+                    onClick={() => {
+                      setPendingTemperature(defaultTemperature)
+                      onChangeTemperature(defaultTemperature)
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-[8px] text-[var(--text-faint)] transition hover:bg-white/5 hover:text-[var(--text-dim)]"
+                  >
+                    <TrashIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <input
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={pendingTemperature}
+                  onChange={(event) => setPendingTemperature(Number(event.target.value) || 0)}
+                  onBlur={() => onChangeTemperature(pendingTemperature)}
+                  className="h-7 w-[94px] rounded-[9px] border border-[var(--border-strong)] bg-[rgba(28,31,43,0.88)] px-2.5 py-1 text-right text-[12px] text-[var(--text)] outline-none"
+                />
+              </div>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={2}
+              step={0.1}
+              value={pendingTemperature}
+              onChange={(event) => setPendingTemperature(Number(event.target.value))}
+              onMouseUp={() => onChangeTemperature(pendingTemperature)}
+              onTouchEnd={() => onChangeTemperature(pendingTemperature)}
+              className={`graph-slider w-full ${isTemperatureChanged ? 'graph-slider-active' : ''}`}
+            />
+          </div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[14px] text-[var(--text-dim)]">Context Length</span>
             <div className="flex items-center gap-2">
@@ -1379,7 +1445,7 @@ function GeneralInspector({
             onChange={(event) => setPendingContextLength(Number(event.target.value))}
             onMouseUp={() => onChangeContextLength(pendingContextLength)}
             onTouchEnd={() => onChangeContextLength(pendingContextLength)}
-            className="graph-slider w-full"
+            className={`graph-slider w-full ${isContextLengthChanged ? 'graph-slider-active' : ''}`}
           />
           <p className="mt-2 text-[11px] leading-5 text-[var(--text-faint)]">Applied on the next model load.</p>
         </label>
@@ -1580,6 +1646,14 @@ function BoltIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
       <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+    </svg>
+  )
+}
+
+function MessageIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M7 18.5 3.5 21V6.5A2.5 2.5 0 0 1 6 4h12a2.5 2.5 0 0 1 2.5 2.5v8A2.5 2.5 0 0 1 18 17H9.5L7 18.5Z" />
     </svg>
   )
 }

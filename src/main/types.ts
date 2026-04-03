@@ -68,6 +68,7 @@ export interface AppSettings {
   selectedModelPath: string
   selectedModelName: string
   contextLength: number
+  temperature: number
   availableModels: ModelOption[]
   resolvedModelPath: string
   resolvedServerPath: string

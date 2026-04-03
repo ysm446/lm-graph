@@ -1,4 +1,4 @@
-﻿import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { basename, join, relative, resolve } from 'node:path'
@@ -8,6 +8,7 @@ import type { AppSettings, ModelOption } from './types'
 
 const DEFAULT_PORT = 8080
 const DEFAULT_CONTEXT_LENGTH = 32768
+const DEFAULT_TEMPERATURE = 0.8
 
 export class LlamaServerManager {
   private process: ChildProcessWithoutNullStreams | null = null
@@ -68,8 +69,9 @@ export class LlamaServerManager {
     return this.getSettings()
   }
 
-  async updateSettings(input: { contextLength?: number }): Promise<AppSettings> {
+  async updateSettings(input: { contextLength?: number; temperature?: number }): Promise<AppSettings> {
     const nextContextLength = input.contextLength ?? this.settings.contextLength
+    const nextTemperature = input.temperature ?? this.settings.temperature
     const currentModel = this.listModels().find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath))
     if (!currentModel) {
       throw new Error('Selected model was not found in models/.')
@@ -80,7 +82,7 @@ export class LlamaServerManager {
       await this.stop()
     }
 
-    this.settings = this.buildSettings(currentModel, this.listModels(), nextContextLength)
+    this.settings = this.buildSettings(currentModel, this.listModels(), nextContextLength, nextTemperature)
     return this.getSettings()
   }
 
@@ -104,7 +106,7 @@ export class LlamaServerManager {
     await delay(400)
   }
 
-  private buildSettings(selectedModel: ModelOption, availableModels = this.listModels(), contextLength = this.settings?.contextLength ?? DEFAULT_CONTEXT_LENGTH): AppSettings {
+  private buildSettings(selectedModel: ModelOption, availableModels = this.listModels(), contextLength = this.settings?.contextLength ?? DEFAULT_CONTEXT_LENGTH, temperature = this.settings?.temperature ?? DEFAULT_TEMPERATURE): AppSettings {
     accessSync(this.serverPath, constants.F_OK)
     return {
       llamaBaseUrl: `http://127.0.0.1:${this.port}`,
@@ -112,6 +114,7 @@ export class LlamaServerManager {
       selectedModelPath: selectedModel.path,
       selectedModelName: selectedModel.name,
       contextLength,
+      temperature,
       availableModels,
       resolvedModelPath: selectedModel.path,
       resolvedServerPath: this.serverPath
@@ -165,7 +168,7 @@ export class LlamaServerManager {
     if (!currentModel) {
       throw new Error('Selected model was not found in models/.')
     }
-    this.settings = this.buildSettings(currentModel, this.listModels(), this.settings.contextLength)
+    this.settings = this.buildSettings(currentModel, this.listModels(), this.settings.contextLength, this.settings.temperature)
   }
 
   private async waitForHealthy(): Promise<void> {

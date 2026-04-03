@@ -12,6 +12,7 @@ const generationControllers = new Map<string, AbortController>()
 const preferencesPath = join(app.getPath('userData'), 'preferences.json')
 const defaultUiPreferences: UiPreferences = {
   contextLength: 32768,
+  temperature: 0.8,
   isSidebarOpen: true,
   isInspectorOpen: true,
   isMiniMapVisible: true,
@@ -83,7 +84,7 @@ app.on('window-all-closed', async () => {
 function registerIpc(): void {
   ipcMain.handle('bootstrap', async () => {
     uiPreferencesCache = await loadUiPreferences()
-    const settings = await llamaServer.updateSettings({ contextLength: uiPreferencesCache.contextLength })
+    const settings = await llamaServer.updateSettings({ contextLength: uiPreferencesCache.contextLength, temperature: uiPreferencesCache.temperature })
     const snapshot = repository.ensureDefaultProject()
     return { projects: repository.listProjects(), snapshot, settings, uiPreferences: uiPreferencesCache }
   })
@@ -96,10 +97,13 @@ function registerIpc(): void {
     await llamaServer.stop()
     return { settings: llamaServer.getSettings() }
   })
-  ipcMain.handle('settings:update', async (_event, input: { contextLength?: number }) => {
+  ipcMain.handle('settings:update', async (_event, input: { contextLength?: number; temperature?: number }) => {
     const settings = await llamaServer.updateSettings(input)
-    if (input.contextLength !== undefined) {
-      uiPreferencesCache = await saveUiPreferences({ contextLength: settings.contextLength })
+    if (input.contextLength !== undefined || input.temperature !== undefined) {
+      uiPreferencesCache = await saveUiPreferences({
+        contextLength: settings.contextLength,
+        temperature: settings.temperature
+      })
     }
     return { settings }
   })
@@ -217,6 +221,7 @@ async function streamGeneration(input: {
         model: llamaServer.getSettings().llamaModelAlias,
         stream: true,
         stream_options: { include_usage: true },
+        temperature: llamaServer.getSettings().temperature,
         messages: [
           { role: 'system', content: input.systemPrompt },
           { role: 'user', content: input.userContext + '\\n\\n---\\nWrite the target text based on the context above.' }

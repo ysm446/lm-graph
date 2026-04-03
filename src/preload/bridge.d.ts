@@ -5,7 +5,7 @@ export interface GraphChatApi {
   listModels(): Promise<AppSettings>
   selectModel(modelPath: string): Promise<{ settings: AppSettings }>
   ejectModel(): Promise<{ settings: AppSettings }>
-  updateSettings(input: { contextLength?: number }): Promise<{ settings: AppSettings }>
+  updateSettings(input: { contextLength?: number; temperature?: number }): Promise<{ settings: AppSettings }>
   savePreferences(input: Partial<UiPreferences>): Promise<{ uiPreferences: UiPreferences }>
   setProjectDirty(isDirty: boolean): Promise<{ ok: true }>
   createProject(name: string): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot }>
