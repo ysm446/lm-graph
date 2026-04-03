@@ -1,6 +1,6 @@
-# Graph Chat
+# Prompt Graph
 
-Graph Chat is a desktop app for building local LLM workflows as a directed acyclic graph.
+Prompt Graph is a desktop app for building local LLM workflows as a directed acyclic graph.
 It uses Electron + React + React Flow for the UI, SQLite for project storage, and a local `llama.cpp` OpenAI-compatible server for generation.
 
 ## Current Features

@@ -850,6 +850,7 @@ function GraphChatApp() {
             <ModelSelectorButton
               onClick={() => void openModelModal()}
               label={settings ? (isModelLoaded ? displayModelName(settings.selectedModelName) : 'Select a model to load') : 'Select a model to load'}
+              isActive={isModelSwitching || isModelLoaded}
             />
             {settings && isModelLoaded && (
               <IconButton
@@ -1115,7 +1116,7 @@ function GraphChatApp() {
       <SidebarResizeHandle onMouseDown={(event) => beginSidebarResize('right', event)} />
       <section style={{ width: rightInspectorWidth }} className="flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)]">
         <div className="border-b border-[var(--border)] px-5 py-3">
-          <h2 className="font-serif text-[18px] font-semibold">{selectedNode?.title || 'Properties'}</h2>
+          <h2 className="text-[18px] font-semibold">{selectedNode?.title || 'Properties'}</h2>
           <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? defaultTitle(selectedNode.type) : 'General settings'}</p>
         </div>
         {selectedNode ? (
@@ -1229,7 +1230,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           {node.type === 'text' && (
             <button
               type="button"
-              className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]"
+              className="nodrag nopan rounded-[10px] bg-[rgba(68,54,124,0.96)] px-4 py-1.5 text-sm font-medium text-white hover:bg-[rgba(82,66,146,0.98)]"
               onMouseDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -1631,10 +1632,14 @@ function IconButton({ onClick, label, children, active = false, disabled = false
   )
 }
 
-function ModelSelectorButton({ onClick, label }: { onClick: () => void; label: string }) {
+function ModelSelectorButton({ onClick, label, isActive = false }: { onClick: () => void; label: string; isActive?: boolean }) {
   return (
     <button
-      className="flex min-w-[220px] max-w-[480px] items-center gap-2 rounded-[8px] border border-[var(--border-strong)] bg-white/5 px-3.5 py-1.5 text-[13px] font-medium text-[var(--text-dim)] transition hover:border-[var(--accent)] hover:bg-white/10 hover:text-[var(--text)]"
+      className={`flex min-w-[220px] max-w-[480px] items-center gap-2 rounded-[8px] border px-3.5 py-1.5 text-[13px] font-medium transition ${
+        isActive
+          ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--text)]'
+          : 'border-[var(--border-strong)] bg-white/5 text-[var(--text-dim)] hover:border-[var(--accent)] hover:bg-white/10 hover:text-[var(--text)]'
+      }`}
       onClick={onClick}
     >
       <span className="flex w-4 shrink-0 justify-center">
