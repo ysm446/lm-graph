@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+﻿import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -155,6 +155,7 @@ async function streamGeneration(input: {
       body: JSON.stringify({
         model: llamaServer.getSettings().llamaModelAlias,
         stream: true,
+        stream_options: { include_usage: true },
         messages: [
           { role: 'system', content: input.systemPrompt },
           { role: 'user', content: input.userContext + '\\n\\n---\\nWrite the target text based on the context above.' }
@@ -169,6 +170,9 @@ async function streamGeneration(input: {
     const decoder = new TextDecoder()
     let buffer = ''
     let content = input.initialContent
+    let finishReason: string | null = null
+    let completionTokens: number | null = null
+    const startedAt = Date.now()
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -180,7 +184,12 @@ async function streamGeneration(input: {
           if (!line.startsWith('data:')) continue
           const data = line.slice(5).trim()
           if (data === '[DONE]') continue
-          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> }
+          const parsed = JSON.parse(data) as {
+            choices?: Array<{ delta?: { content?: string }; finish_reason?: string | null }>
+            usage?: { completion_tokens?: number }
+          }
+          finishReason = parsed.choices?.[0]?.finish_reason ?? finishReason
+          completionTokens = parsed.usage?.completion_tokens ?? completionTokens
           const delta = parsed.choices?.[0]?.delta?.content ?? ''
           if (!delta) continue
           content += delta
@@ -199,7 +208,12 @@ async function streamGeneration(input: {
       id: input.targetNode.id,
       content: stripThinkTags(content),
       isGenerated: true,
-      model: llamaServer.getSettings().llamaModelAlias
+      model: llamaServer.getSettings().llamaModelAlias,
+      generationMeta: buildGenerationMeta({
+        completionTokens,
+        durationMs: Date.now() - startedAt,
+        finishReason
+      })
     })
     input.event.sender.send('generation:done', {
       generationId: input.generationId,
@@ -213,6 +227,20 @@ async function streamGeneration(input: {
   }
 }
 
+function buildGenerationMeta(input: { completionTokens: number | null; durationMs: number; finishReason: string | null }) {
+  const durationSeconds = input.durationMs > 0 ? Number((input.durationMs / 1000).toFixed(2)) : null
+  const tokensPerSecond =
+    input.completionTokens !== null && durationSeconds && durationSeconds > 0
+      ? Number((input.completionTokens / durationSeconds).toFixed(1))
+      : null
+
+  return {
+    completionTokens: input.completionTokens,
+    tokensPerSecond,
+    durationSeconds,
+    finishReason: input.finishReason
+  }
+}
 function collectContext(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEdgeRecord[]) {
   const nodeMap = new Map(nodes.map((node) => [node.id, node]))
   const parentMap = new Map<string, string[]>()
@@ -226,7 +254,6 @@ function collectContext(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEd
   const upstream = ordered.filter((node) => node.id !== nodeId)
   const directParents = (parentMap.get(nodeId) ?? []).map((id) => nodeMap.get(id)).filter((value): value is GraphNodeRecord => Boolean(value))
   const systemParts = upstream.filter((node) => node.type === 'instruction').map((node) => node.content.trim()).filter(Boolean)
-  const localInstructions = ordered.map((node) => node.instruction?.trim()).filter((value): value is string => Boolean(value))
   const directParentTexts = directParents
     .filter((node) => node.type === 'text' && node.content.trim())
     .map((node, index) => `# Direct Parent Text ${index + 1}${node.title ? `: ${node.title}` : ''}
@@ -246,7 +273,7 @@ Write the final content for this target node.`
 Write the final content for this target node.`
 
   return {
-    systemPrompt: [...systemParts, ...localInstructions].join('\n\n') || 'You are a helpful writing assistant.',
+    systemPrompt: systemParts.join('\\n\\n') || 'You are a helpful writing assistant.',
     userContext: [
       directParentTexts.length > 0 ? 'Use the direct parent texts below as the highest-priority source material.' : '',
       ...directParentTexts,
@@ -278,3 +305,5 @@ function traverseUpstream(
   const parents = (parentMap.get(nodeId) ?? []).flatMap((parentId) => traverseUpstream(parentId, nodeMap, parentMap, visited))
   return [...parents, node]
 }
+
+

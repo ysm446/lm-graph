@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+﻿import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -111,7 +111,7 @@ export class LlamaServerManager {
         '--alias',
         llamaModelAlias,
         '--ctx-size',
-        '8192',
+        '32768',
         '--flash-attn',
         'on',
         '--reasoning',
@@ -176,3 +176,4 @@ function walkFiles(dir: string): string[] {
   }
   return files
 }
+

@@ -1,10 +1,17 @@
-export type NodeType = 'text' | 'context' | 'instruction'
+﻿export type NodeType = 'text' | 'context' | 'instruction'
 
 export interface ProjectRecord {
   id: string
   name: string
   createdAt: string
   updatedAt: string
+}
+
+export interface GenerationMeta {
+  completionTokens: number | null
+  tokensPerSecond: number | null
+  durationSeconds: number | null
+  finishReason: string | null
 }
 
 export interface GraphNodeRecord {
@@ -16,6 +23,7 @@ export interface GraphNodeRecord {
   instruction: string | null
   model: string | null
   isGenerated: boolean
+  generationMeta: GenerationMeta | null
   createdAt: string
   updatedAt: string
   position: {
@@ -56,3 +64,4 @@ export interface AppSettings {
   resolvedModelPath: string
   resolvedServerPath: string
 }
+

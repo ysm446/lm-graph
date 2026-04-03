@@ -1,4 +1,4 @@
-import type { AppSettings, GraphNodeRecord, ProjectRecord, ProjectSnapshot } from '../main/types'
+﻿import type { AppSettings, GraphNodeRecord, ProjectRecord, ProjectSnapshot } from '../main/types'
 
 export interface GraphChatApi {
   bootstrap(): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot; settings: AppSettings }>
@@ -17,6 +17,7 @@ export interface GraphChatApi {
     instruction?: string | null
     model?: string | null
     isGenerated?: boolean
+    generationMeta?: GraphNodeRecord['generationMeta']
     position?: { x: number; y: number }
     size?: { width: number; height: number }
   }): Promise<{ node: GraphNodeRecord; snapshot: ProjectSnapshot; projects: ProjectRecord[] }>
@@ -29,6 +30,7 @@ export interface GraphChatApi {
     size?: { width: number; height: number }
     model?: string | null
     isGenerated?: boolean
+    generationMeta?: GraphNodeRecord['generationMeta']
   }): Promise<GraphNodeRecord>
   deleteNode(id: string): Promise<{ snapshot: ProjectSnapshot; projects: ProjectRecord[] }>
   createEdge(projectId: string, sourceId: string, targetId: string): Promise<{ snapshot: ProjectSnapshot; projects: ProjectRecord[] }>

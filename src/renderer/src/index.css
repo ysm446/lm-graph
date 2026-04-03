@@ -81,3 +81,26 @@ textarea {
 .react-flow__controls-button svg {
   fill: currentColor;
 }
+
+.inspector-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #34384a transparent;
+}
+
+.inspector-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.inspector-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspector-scrollbar::-webkit-scrollbar-thumb {
+  background: #34384a;
+  border-radius: 999px;
+  border: 2px solid #1a1d27;
+}
+
+.inspector-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #40465b;
+}

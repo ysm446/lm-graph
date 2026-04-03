@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Background,
   Controls,
@@ -221,7 +221,7 @@ function GraphChatApp() {
   }
 
   async function deleteProject(project: ProjectRecord) {
-    if (!confirm(`"${project.name}" を削除しますか？`)) return
+    if (!confirm(`Delete "${project.name}"?`)) return
     const result = await window.graphChat.deleteProject(project.id)
     setProjects(result.projects)
     applySnapshot(result.snapshot)
@@ -254,7 +254,8 @@ function GraphChatApp() {
       position: node.position,
       size: node.size,
       model: node.model,
-      isGenerated: node.isGenerated
+      isGenerated: node.isGenerated,
+      generationMeta: node.generationMeta
     })
     mutateLocalNode(updated)
   }
@@ -349,7 +350,8 @@ function GraphChatApp() {
     const updated = await window.graphChat.updateNode({
       id: nodeId,
       content: '',
-      isGenerated: false
+      isGenerated: false,
+      generationMeta: null
     })
     mutateLocalNode(updated)
     if (reader?.nodeId === nodeId) {
@@ -370,6 +372,7 @@ function GraphChatApp() {
       instruction: graphNode.instruction,
       model: graphNode.model,
       isGenerated: false,
+      generationMeta: null,
       position: { x: graphNode.position.x + 60, y: graphNode.position.y + 60 },
       size: graphNode.size
     })
@@ -625,8 +628,8 @@ function GraphChatApp() {
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-10">
             <div className="max-w-xl rounded-[2rem] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.9)] p-8 shadow-xl backdrop-blur-sm">
               <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-dim)]">Getting Started</div>
-              <h2 className="mt-2 font-serif text-3xl font-semibold">最初のノードを置いて流れを作り始めます。</h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--text-dim)]">上部ボタンかキャンバス右クリックでノードを追加できます。`context` と `instruction` を `text` の上流につないで、生成の文脈を組み立てていきます。</p>
+              <h2 className="mt-2 font-serif text-3xl font-semibold">Build your graph from connected nodes.</h2>
+              <p className="mt-3 text-sm leading-7 text-[var(--text-dim)]">Right-click the canvas to add nodes, then connect context, instruction, and text nodes to shape the output.</p>
             </div>
           </div>
         )}
@@ -718,7 +721,7 @@ function GraphChatApp() {
                   <p className="px-3 py-4 text-center text-sm text-[var(--text-faint)]">No models found</p>
                 )}
               </div>
-              {generation && <p className="mt-4 text-sm text-amber-300">生成中はモデルを切り替えられません。</p>}
+              {generation && <p className="mt-4 text-sm text-amber-300">You cannot switch models while generation is running.</p>}
             </div>
           </div>
         )}
@@ -726,7 +729,7 @@ function GraphChatApp() {
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => setProjectDialog(null)}>
             <div className="w-full max-w-md rounded-[2rem] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
               <div className="text-xs uppercase tracking-[0.28em] text-[var(--text-dim)]">Project</div>
-              <h3 className="mt-2 font-serif text-2xl font-semibold">{projectDialog.mode === 'create' ? '新しいプロジェクト' : 'プロジェクト名を変更'}</h3>
+              <h3 className="mt-2 font-serif text-2xl font-semibold">{projectDialog.mode === 'create' ? 'Create Project' : 'Rename Project'}</h3>
               <input
                 autoFocus
                 value={projectDialog.value}
@@ -798,7 +801,7 @@ function GraphChatApp() {
           }}
           defaultEdgeOptions={{ style: { strokeWidth: 2, stroke: '#3a3f50' } }}
         >
-          <MiniMap pannable zoomable style={{ backgroundColor: '#181b23' }} />
+          <MiniMap pannable zoomable style={{ backgroundColor: '#181b23' }} nodeColor={(node) => getMiniMapNodeColor(node as Node<AppNodeData>)} />
           <Background gap={20} size={1.4} color="#2d3342" />
           <Controls />
         </ReactFlow>
@@ -879,7 +882,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-dim)]">{node.type}</div>
             <div className="font-serif text-lg font-semibold">{node.title || 'Untitled'}</div>
           </button>
-          {node.type === 'text' && <button className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]" onClick={() => data.onGenerate(node.id)}>生成 -&gt;</button>}
+          {node.type === 'text' && <button className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]" onClick={() => data.onGenerate(node.id)}>逕滓・ -&gt;</button>}
         </div>
         <div className="flex-1 overflow-hidden whitespace-pre-wrap text-sm leading-6 text-[var(--text)]">{node.content || 'No content yet.'}</div>
         <div className="mt-3 flex justify-between text-xs text-[var(--text-dim)]">
@@ -909,7 +912,7 @@ function NodeEditor({
   onDelete: () => void
 }) {
   return (
-    <div className="flex-1 overflow-y-auto p-5">
+    <div className="inspector-scrollbar flex-1 overflow-y-auto p-5">
       <label className="mb-4 block">
         <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Title</div>
         <input value={node.title} disabled={disabled} onChange={(event) => onChange({ ...node, title: event.target.value })} className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
@@ -918,22 +921,28 @@ function NodeEditor({
         <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
         <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
       </label>
-      {node.type !== 'instruction' && (
-        <label className="mb-4 block">
-          <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Local Instruction</div>
-          <textarea value={node.instruction ?? ''} disabled={disabled} onChange={(event) => onChange({ ...node, instruction: event.target.value })} className="h-40 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
-        </label>
+      {node.generationMeta && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
+          {node.generationMeta.tokensPerSecond !== null && <MetaItem icon={<BoltIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.tokensPerSecond.toFixed(1)} tok/sec`} />}
+          {node.generationMeta.completionTokens !== null && <MetaItem icon={<TokenIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} tokens`} />}
+          {node.generationMeta.durationSeconds !== null && <MetaItem icon={<ClockIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.durationSeconds.toFixed(2)}s`} />}
+          {node.generationMeta.finishReason && <MetaItem icon={<FlagIcon className="h-3.5 w-3.5" />} label={`Finish reason: ${node.generationMeta.finishReason}`} />}
+        </div>
       )}
-      <div className="text-xs text-[var(--text-dim)]">Current model: {currentModelName ? displayModelName(currentModelName) : (node.model || 'default')}</div>
-      <button className="mt-6 w-full rounded-md border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onDuplicate} disabled={disabled}>Duplicate Node</button>
-      <button className="mt-6 w-full rounded-md border border-[var(--border-strong)] px-4 py-3 text-sm text-[var(--text)] hover:bg-white/5" onClick={onClear} disabled={disabled}>Clear Content</button>
-      <button className="mt-6 w-full rounded-md border border-red-500/40 px-4 py-3 text-sm text-red-300 hover:bg-red-950/40" onClick={onDelete}>Delete Node</button>
+      <div className="inline-flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
+        <CpuIcon className="h-3.5 w-3.5" />
+        <span>{node.model ? displayModelName(node.model) : (currentModelName ? displayModelName(currentModelName) : 'default')}</span>
+      </div>
     </div>
   )
 }
 
 function ToolbarButton({ onClick, label }: { onClick: () => void; label: string }) {
   return <button className="rounded-full border border-[var(--border-strong)] bg-[rgba(28,31,43,0.92)] px-4 py-2 text-sm font-medium text-[var(--text)] shadow-sm hover:bg-white/5" onClick={onClick}>{label}</button>
+}
+
+function MetaItem({ icon, label }: { icon: ReactNode; label: string }) {
+  return <span className="inline-flex items-center gap-1.5">{icon}<span>{label}</span></span>
 }
 
 function IconButton({ onClick, label, children, active = false, disabled = false }: { onClick: () => void; label: string; children: ReactNode; active?: boolean; disabled?: boolean }) {
@@ -954,7 +963,7 @@ function IconButton({ onClick, label, children, active = false, disabled = false
 function ModelSelectorButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button
-      className="flex max-w-[480px] items-center gap-2 rounded-[8px] border border-[var(--border-strong)] bg-white/5 px-3.5 py-1.5 text-[13px] font-medium text-[var(--text-dim)] transition hover:border-[var(--accent)] hover:bg-white/10 hover:text-[var(--text)]"
+      className="flex min-w-[220px] max-w-[480px] items-center gap-2 rounded-[8px] border border-[var(--border-strong)] bg-white/5 px-3.5 py-1.5 text-[13px] font-medium text-[var(--text-dim)] transition hover:border-[var(--accent)] hover:bg-white/10 hover:text-[var(--text)]"
       onClick={onClick}
     >
       <CpuIcon className="h-[15px] w-[15px] shrink-0" />
@@ -1028,6 +1037,42 @@ function EjectIcon({ className }: { className?: string }) {
   )
 }
 
+function BoltIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+    </svg>
+  )
+}
+
+function TokenIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <rect x="4" y="6" width="16" height="12" rx="2.5" />
+      <path d="M9 10h6" />
+      <path d="M9 14h3" />
+    </svg>
+  )
+}
+
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v5l3 2" />
+    </svg>
+  )
+}
+
+function FlagIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M6 20V5" />
+      <path d="M6 5h9l-1.5 3L15 11H6" />
+    </svg>
+  )
+}
+
 function MenuAction({ onClick, label }: { onClick: () => void; label: string }) {
   return <button className="block w-full rounded-2xl px-4 py-3 text-left text-sm text-[var(--text)] hover:bg-white/5" onClick={onClick}>{label}</button>
 }
@@ -1045,6 +1090,13 @@ function defaultTitle(type: NodeType): string {
 
 function displayModelName(modelName: string): string {
   return modelName.split(/[\\/]/).pop() ?? modelName
+}
+
+function getMiniMapNodeColor(node: Node<AppNodeData>): string {
+  const type = node.data?.graphNode.type
+  if (type === 'context') return '#3a315f'
+  if (type === 'instruction') return '#5b2d5d'
+  return '#2a2745'
 }
 
 function isEditableElement(target: EventTarget | null): boolean {
@@ -1088,3 +1140,6 @@ function traverse(nodeId: string, nodeMap: Map<string, GraphNodeRecord>, parentM
 }
 
 export default App
+
+
+

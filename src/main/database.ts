@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+﻿import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -17,6 +17,7 @@ type NodeRow = {
   instruction: string | null
   model: string | null
   is_generated: number
+  generation_meta: string | null
   created_at: string
   updated_at: string
   x: number
@@ -47,6 +48,7 @@ export interface CreateNodeInput {
   instruction?: string | null
   model?: string | null
   isGenerated?: boolean
+  generationMeta?: GraphNodeRecord['generationMeta']
   position?: { x: number; y: number }
   size?: { width: number; height: number }
 }
@@ -60,6 +62,7 @@ export interface UpdateNodeInput {
   size?: { width: number; height: number }
   model?: string | null
   isGenerated?: boolean
+  generationMeta?: GraphNodeRecord['generationMeta']
 }
 
 export class GraphRepository {
@@ -87,6 +90,7 @@ export class GraphRepository {
         instruction TEXT,
         model TEXT,
         is_generated INTEGER NOT NULL DEFAULT 0,
+        generation_meta TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -103,6 +107,7 @@ export class GraphRepository {
         y REAL NOT NULL
       );
     `)
+    this.ensureNodeColumns()
     this.ensureNodePositionColumns()
   }
 
@@ -155,8 +160,8 @@ export class GraphRepository {
     this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO nodes (id, project_id, type, title, content, instruction, model, is_generated, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO nodes (id, project_id, type, title, content, instruction, model, is_generated, generation_meta, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -167,6 +172,7 @@ export class GraphRepository {
           input.instruction ?? null,
           input.model ?? null,
           input.isGenerated ? 1 : 0,
+          input.generationMeta ? JSON.stringify(input.generationMeta) : null,
           now,
           now
         )
@@ -182,7 +188,7 @@ export class GraphRepository {
     this.db.transaction(() => {
       this.db
         .prepare(
-          `UPDATE nodes SET title = ?, content = ?, instruction = ?, model = ?, is_generated = ?, updated_at = ? WHERE id = ?`
+          `UPDATE nodes SET title = ?, content = ?, instruction = ?, model = ?, is_generated = ?, generation_meta = ?, updated_at = ? WHERE id = ?`
         )
         .run(
           input.title ?? current.title,
@@ -190,6 +196,7 @@ export class GraphRepository {
           input.instruction === undefined ? current.instruction : input.instruction,
           input.model ?? current.model,
           input.isGenerated === undefined ? Number(current.isGenerated) : Number(input.isGenerated),
+          input.generationMeta === undefined ? (current.generationMeta ? JSON.stringify(current.generationMeta) : null) : (input.generationMeta ? JSON.stringify(input.generationMeta) : null),
           now,
           input.id
         )
@@ -248,7 +255,7 @@ export class GraphRepository {
   getNode(id: string): GraphNodeRecord {
     const row = this.db
       .prepare(
-        `SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.model, n.is_generated, n.created_at, n.updated_at,
+        `SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.model, n.is_generated, n.generation_meta, n.created_at, n.updated_at,
                 COALESCE(p.x, 80) AS x, COALESCE(p.y, 80) AS y,
                 COALESCE(p.width, ${DEFAULT_NODE_WIDTH}) AS width, COALESCE(p.height, ${DEFAULT_NODE_HEIGHT}) AS height
          FROM nodes n
@@ -265,7 +272,7 @@ export class GraphRepository {
   listNodes(projectId: string): GraphNodeRecord[] {
     const rows = this.db
       .prepare(
-        `SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.model, n.is_generated, n.created_at, n.updated_at,
+        `SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.model, n.is_generated, n.generation_meta, n.created_at, n.updated_at,
                 COALESCE(p.x, 80) AS x, COALESCE(p.y, 80) AS y,
                 COALESCE(p.width, ${DEFAULT_NODE_WIDTH}) AS width, COALESCE(p.height, ${DEFAULT_NODE_HEIGHT}) AS height
          FROM nodes n
@@ -301,6 +308,13 @@ export class GraphRepository {
     this.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), projectId)
   }
 
+  private ensureNodeColumns(): void {
+    const columns = this.db.prepare('PRAGMA table_info(nodes)').all() as Array<{ name: string }>
+    const names = new Set(columns.map((column) => column.name))
+    if (!names.has('generation_meta')) {
+      this.db.exec('ALTER TABLE nodes ADD COLUMN generation_meta TEXT;')
+    }
+  }
   private ensureNodePositionColumns(): void {
     const columns = this.db.prepare('PRAGMA table_info(node_positions)').all() as Array<{ name: string }>
     const names = new Set(columns.map((column) => column.name))
@@ -327,6 +341,7 @@ function mapNode(row: NodeRow): GraphNodeRecord {
     instruction: row.instruction,
     model: row.model,
     isGenerated: Boolean(row.is_generated),
+    generationMeta: row.generation_meta ? JSON.parse(row.generation_meta) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     position: { x: row.x, y: row.y },
