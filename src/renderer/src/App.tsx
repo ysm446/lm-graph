@@ -24,7 +24,11 @@ import type { ReaderState } from './types'
 type AppNodeData = {
   graphNode: GraphNodeRecord
   isSelected: boolean
+  isEditing: boolean
   onSelect: (id: string) => void
+  onChange: (node: GraphNodeRecord) => void
+  onStartEdit: (id: string) => void
+  onStopEdit: () => void
   onGenerate: (id: string) => void
   onOpenReader: (id: string) => void
   onResize: (id: string, input: { position: { x: number; y: number }; size: { width: number; height: number } }) => void
@@ -80,6 +84,7 @@ function GraphChatApp() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [status, setStatus] = useState('Loading...')
   const [error, setError] = useState<string | null>(null)
   const [reader, setReader] = useState<ReaderState | null>(null)
@@ -199,17 +204,21 @@ function GraphChatApp() {
         ...node,
         data: {
           ...node.data,
-          isSelected: node.id === selectedNodeId
+          isSelected: node.id === selectedNodeId,
+          isEditing: node.id === editingNodeId
         }
       }))
     )
-  }, [selectedNodeId, setNodes])
+  }, [selectedNodeId, editingNodeId, setNodes])
 
   const selectedNode = useMemo(() => snapshotRef.current?.nodes.find((node) => node.id === selectedNodeId) ?? null, [selectedNodeId, nodes])
   const nodeTypes = useMemo(() => ({ graphNode: GraphNodeCard }), [])
 
   function selectNode(nodeId: string | null) {
     setSelectedNodeId(nodeId)
+    if (nodeId === null) {
+      setEditingNodeId(null)
+    }
     if (nodeId) {
       setSelectedEdgeId(null)
     }
@@ -235,7 +244,17 @@ function GraphChatApp() {
       data: {
         graphNode: node,
         isSelected: node.id === selectedNodeId,
+        isEditing: node.id === editingNodeId,
         onSelect: selectNode,
+        onChange: (updated) => {
+          mutateLocalNode(updated)
+          void persistNode(updated)
+        },
+        onStartEdit: (id) => {
+          selectNode(id)
+          setEditingNodeId(id)
+        },
+        onStopEdit: () => setEditingNodeId(null),
         onGenerate: handleGenerate,
         onOpenReader: openReader,
         onResize: handleResize
@@ -361,6 +380,7 @@ function GraphChatApp() {
   async function handleGenerate(nodeId: string) {
     if (generation || !activeProjectId) return
     setError(null)
+    setEditingNodeId(null)
     setStatus('Starting generation...')
     try {
       const result = await window.graphChat.startGeneration({ projectId: activeProjectId, sourceNodeId: nodeId })
@@ -388,6 +408,7 @@ function GraphChatApp() {
   function openReader(nodeId: string) {
     const snapshot = snapshotRef.current
     if (!snapshot) return
+    setEditingNodeId(null)
     const content = collectReaderText(nodeId, snapshot.nodes, snapshot.edges)
     const title = snapshot.nodes.find((node) => node.id === nodeId)?.title || 'Reader View'
     setReader({ nodeId, title, content })
@@ -437,14 +458,15 @@ function GraphChatApp() {
     setStatus('Node content cleared')
   }
 
-  async function duplicateNode(nodeId: string, options?: { position?: { x: number; y: number } }) {
+  async function duplicateNode(nodeId: string, options?: { position?: { x: number; y: number }; clearTextContent?: boolean }) {
     const graphNode = snapshotRef.current?.nodes.find((node) => node.id === nodeId)
     if (!graphNode) return
+    const duplicatedContent = options?.clearTextContent && graphNode.type === 'text' ? '' : graphNode.content
     const result = await window.graphChat.createNode({
       projectId: graphNode.projectId,
       type: graphNode.type,
       title: `${graphNode.title} copy`,
-      content: graphNode.content,
+      content: duplicatedContent,
       instruction: graphNode.instruction,
       model: graphNode.model,
       isGenerated: false,
@@ -575,7 +597,7 @@ function GraphChatApp() {
               y: bounds.top + bounds.height / 2
             })
           : undefined
-        void duplicateNode(copiedNodeIdRef.current, center ? { position: center } : undefined)
+        void duplicateNode(copiedNodeIdRef.current, center ? { position: center, clearTextContent: true } : { clearTextContent: true })
         return
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd' && selectedNode) {
@@ -604,7 +626,7 @@ function GraphChatApp() {
 
   function mutateLocalNode(updated: GraphNodeRecord) {
     snapshotRef.current = snapshotRef.current ? { ...snapshotRef.current, nodes: snapshotRef.current.nodes.map((node) => node.id === updated.id ? updated : node) } : snapshotRef.current
-    setNodes((current) => current.map((node) => node.id === updated.id ? { ...node, position: updated.position, style: { width: updated.size.width, height: updated.size.height }, data: { ...node.data, graphNode: updated, isSelected: updated.id === selectedNodeId } } : node))
+    setNodes((current) => current.map((node) => node.id === updated.id ? { ...node, position: updated.position, style: { width: updated.size.width, height: updated.size.height }, data: { ...node.data, graphNode: updated, isSelected: updated.id === selectedNodeId, isEditing: updated.id === editingNodeId } } : node))
   }
 
   function openCanvasMenu(event: React.MouseEvent) {
@@ -914,7 +936,7 @@ function GraphChatApp() {
           defaultEdgeOptions={{ style: { strokeWidth: 2, stroke: '#3a3f50' } }}
         >
           {isMiniMapVisible && <MiniMap pannable zoomable style={{ backgroundColor: '#181b23' }} nodeColor={(node) => getMiniMapNodeColor(node as Node<AppNodeData>)} />}
-          <Background gap={20} size={1.4} color="#2d3342" />
+          <Background gap={20} size={1.4} color="#394154" />
           <Controls />
         </ReactFlow>
       </main>
@@ -1007,9 +1029,24 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           </button>
           {node.type === 'text' && <button className="nodrag nopan rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white hover:bg-[var(--accent-hover)]" onClick={() => data.onGenerate(node.id)}>生成 -&gt;</button>}
         </div>
-        <div className="node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-sm leading-6 text-[var(--text)]">{node.content || 'No content yet.'}</div>
+        {data.isEditing ? (
+          <textarea
+            value={node.content}
+            onChange={(event) => data.onChange({ ...node, content: event.target.value })}
+            onMouseDown={(event) => event.stopPropagation()}
+            placeholder="No content yet."
+            className="node-scrollbar nodrag nopan flex-1 resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-sm leading-6 text-[var(--text)] outline-none"
+          />
+        ) : (
+          <div className="node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-sm leading-6 text-[var(--text)]">{node.content || 'No content yet.'}</div>
+        )}
         <div className="mt-3 flex justify-between text-xs text-[var(--text-dim)]">
-          <button className="nodrag nopan" onClick={() => data.onOpenReader(node.id)}>Reader</button>
+          <div className="flex items-center gap-3">
+            <button className="nodrag nopan" onClick={() => data.onOpenReader(node.id)}>Reader</button>
+            <button className="nodrag nopan" onClick={() => (data.isEditing ? data.onStopEdit() : data.onStartEdit(node.id))}>
+              {data.isEditing ? 'Done' : 'Edit'}
+            </button>
+          </div>
           <span>{Math.round(node.size.width)} x {Math.round(node.size.height)}</span>
         </div>
       </div>
