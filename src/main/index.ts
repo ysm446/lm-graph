@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -23,12 +23,14 @@ const defaultUiPreferences: UiPreferences = {
 let uiPreferencesCache: UiPreferences = { ...defaultUiPreferences, generalSections: { ...defaultUiPreferences.generalSections } }
 
 function createWindow(): void {
+  const iconPath = join(app.getAppPath(), 'assets', 'icon.ico')
   const window = new BrowserWindow({
     width: 1600,
     height: 980,
     minWidth: 1200,
     minHeight: 800,
     backgroundColor: '#d8d1c5',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -359,3 +361,4 @@ function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
     }
   }
 }
+
