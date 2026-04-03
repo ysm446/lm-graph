@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Background,
   Controls,
@@ -80,6 +80,8 @@ function GraphChatApp() {
   const [isModelModalOpen, setIsModelModalOpen] = useState(false)
   const [isModelSwitching, setIsModelSwitching] = useState(false)
   const [isModelLoaded, setIsModelLoaded] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [isInspectorOpen, setIsInspectorOpen] = useState(true)
   const [projectDialog, setProjectDialog] = useState<ProjectDialogState>(null)
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null)
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<AppNodeData>>([])
@@ -508,11 +510,19 @@ function GraphChatApp() {
     <div className="flex h-screen flex-col bg-[#0b0d12] text-stone-100">
       <header className="relative z-30 border-b border-slate-800 bg-slate-950/90 px-4 py-1">
         <div className="relative flex min-h-[34px] items-center justify-center px-2">
-          {generation && (
-            <div className="absolute right-0 top-1/2 -translate-y-1/2">
+          <div className="absolute left-0 top-1/2 -translate-y-1/2">
+            <IconButton onClick={() => setIsSidebarOpen((current) => !current)} label={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+              <SidebarToggleIcon className="h-4 w-4" />
+            </IconButton>
+          </div>
+          <div className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-2">
+            <IconButton onClick={() => setIsInspectorOpen((current) => !current)} label={isInspectorOpen ? 'Hide inspector' : 'Show inspector'}>
+              <SidebarToggleIcon className="h-4 w-4 rotate-180" />
+            </IconButton>
+            {generation && (
               <ToolbarButton onClick={() => void stopGeneration()} label="Stop" />
-            </div>
-          )}
+            )}
+          </div>
           <div className="max-w-full">
             <ModelSelectorButton
               onClick={() => void openModelModal()}
@@ -522,6 +532,7 @@ function GraphChatApp() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
+      {isSidebarOpen && (
       <aside className="flex w-72 flex-col border-r border-slate-800 bg-slate-950/90">
         <div className="border-b border-slate-800 px-5 py-4">
           <h1 className="font-serif text-2xl font-semibold">Graph Chat</h1>
@@ -561,6 +572,7 @@ function GraphChatApp() {
           <button className="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-medium text-slate-950 hover:bg-sky-400" onClick={() => void createProject()}>+ New Project</button>
         </div>
       </aside>
+      )}
 
       <main ref={mainRef} className="relative flex-1">
         <div className="absolute bottom-4 left-4 z-20 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-sm shadow-sm">
@@ -750,6 +762,7 @@ function GraphChatApp() {
         </ReactFlow>
       </main>
 
+      {isInspectorOpen && (
       <section className="flex w-[380px] flex-col border-l border-slate-800 bg-slate-950/90">
         <div className="border-b border-slate-800 px-5 py-4">
           <h2 className="font-serif text-xl font-semibold">{selectedNode?.title || 'Node Editor'}</h2>
@@ -783,8 +796,9 @@ function GraphChatApp() {
             </div>
             <textarea readOnly value={reader.content} className="h-56 w-full rounded-2xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100" />
           </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
       </div>
     </div>
   )
@@ -880,6 +894,20 @@ function ToolbarButton({ onClick, label }: { onClick: () => void; label: string 
   return <button className="rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-sm font-medium text-slate-100 shadow-sm hover:bg-slate-800" onClick={onClick}>{label}</button>
 }
 
+function IconButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 items-center justify-center rounded-sm border border-slate-700 bg-slate-900/90 text-slate-100 shadow-sm transition hover:bg-slate-800"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
 function ModelSelectorButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button
@@ -905,6 +933,16 @@ function CpuIcon({ className }: { className?: string }) {
       <path d="M19 14h2" />
       <rect x="5" y="5" width="14" height="14" rx="3" />
       <rect x="9" y="9" width="6" height="6" rx="1.5" />
+    </svg>
+  )
+}
+
+function SidebarToggleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="1.5" />
+      <path d="M9 5v14" />
+      <path d="M6 9l-2 3 2 3" />
     </svg>
   )
 }
