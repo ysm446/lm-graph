@@ -59,6 +59,11 @@ type ProjectMenuState = {
   projectId: string
 } | null
 
+type CopiedSelection = {
+  nodes: GraphNodeRecord[]
+  edges: GraphEdgeRecord[]
+}
+
 type ResizeSide = 'left' | 'right'
 
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 288
@@ -109,7 +114,7 @@ function GraphChatApp() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<AppNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const snapshotRef = useRef<ProjectSnapshot | null>(null)
-  const copiedNodeIdRef = useRef<string | null>(null)
+  const copiedSelectionRef = useRef<CopiedSelection | null>(null)
   const hasLoadedPreferencesRef = useRef(false)
   const resizeStateRef = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null)
 
@@ -554,17 +559,37 @@ function GraphChatApp() {
     void navigator.clipboard.writeText(reader.content)
   }
 
-  async function removeSelected() {
-    if (!selectedNode || !snapshotRef.current) return
+  function getSelectedNodeRecords(nodeIds: string[]) {
     const snapshot = snapshotRef.current
+    if (!snapshot || nodeIds.length === 0) return []
+    const selectedIdSet = new Set(nodeIds)
+    return snapshot.nodes.filter((node) => selectedIdSet.has(node.id))
+  }
+
+  function getCopiedSelection(nodeIds: string[]): CopiedSelection | null {
+    const snapshot = snapshotRef.current
+    if (!snapshot || nodeIds.length === 0) return null
+    const selectedIdSet = new Set(nodeIds)
+    const copiedNodes = getSelectedNodeRecords(nodeIds)
+    if (copiedNodes.length === 0) return null
+    return {
+      nodes: copiedNodes,
+      edges: snapshot.edges.filter((edge) => selectedIdSet.has(edge.sourceId) && selectedIdSet.has(edge.targetId))
+    }
+  }
+
+  async function removeSelected() {
+    const snapshot = snapshotRef.current
+    if (!snapshot || selectedNodeIds.length === 0) return
+    const selectedIdSet = new Set(selectedNodeIds)
     applySnapshot({
       ...snapshot,
-      nodes: snapshot.nodes.filter((node) => node.id !== selectedNode.id),
-      edges: snapshot.edges.filter((edge) => edge.sourceId !== selectedNode.id && edge.targetId !== selectedNode.id)
+      nodes: snapshot.nodes.filter((node) => !selectedIdSet.has(node.id)),
+      edges: snapshot.edges.filter((edge) => !selectedIdSet.has(edge.sourceId) && !selectedIdSet.has(edge.targetId))
     })
     setIsProjectDirty(true)
     setNodeMenu(null)
-    setStatus('Node deleted')
+    setStatus(selectedNodeIds.length === 1 ? 'Node deleted' : `${selectedNodeIds.length} nodes deleted`)
   }
 
   async function removeNode(nodeId: string) {
@@ -599,28 +624,71 @@ function GraphChatApp() {
     setStatus('Node content cleared')
   }
 
-  async function duplicateNode(nodeId: string, options?: { position?: { x: number; y: number }; clearTextContent?: boolean }) {
+  async function duplicateSelection(selection: CopiedSelection, options?: { targetCenter?: { x: number; y: number }; clearTextContent?: boolean; offset?: { x: number; y: number } }) {
     const snapshot = snapshotRef.current
-    const graphNode = snapshot?.nodes.find((node) => node.id === nodeId)
-    if (!snapshot || !graphNode) return
-    const duplicatedContent = options?.clearTextContent && graphNode.type === 'text' ? '' : graphNode.content
-    const now = new Date().toISOString()
-    const duplicatedNode: GraphNodeRecord = {
-      ...graphNode,
-      id: crypto.randomUUID(),
-      title: `${graphNode.title} copy`,
-      content: duplicatedContent,
-      isGenerated: false,
-      generationMeta: null,
-      createdAt: now,
-      updatedAt: now,
-      position: options?.position ?? { x: graphNode.position.x + 60, y: graphNode.position.y + 60 }
+    if (!snapshot || selection.nodes.length === 0) return
+    const bounds = selection.nodes.reduce((acc, node) => ({
+      minX: Math.min(acc.minX, node.position.x),
+      minY: Math.min(acc.minY, node.position.y),
+      maxX: Math.max(acc.maxX, node.position.x + node.size.width),
+      maxY: Math.max(acc.maxY, node.position.y + node.size.height)
+    }), {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY
+    })
+    const selectionCenter = {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2
     }
-    applySnapshot({ ...snapshot, nodes: [...snapshot.nodes, duplicatedNode] })
+    const offset = options?.targetCenter
+      ? { x: options.targetCenter.x - selectionCenter.x, y: options.targetCenter.y - selectionCenter.y }
+      : (options?.offset ?? { x: 60, y: 60 })
+    const now = new Date().toISOString()
+    const duplicatedIds = new Map<string, string>()
+    const duplicatedNodes = selection.nodes.map((node) => {
+      const nextId = crypto.randomUUID()
+      duplicatedIds.set(node.id, nextId)
+      return {
+        ...node,
+        id: nextId,
+        title: node.title,
+        content: options?.clearTextContent && node.type === 'text' ? '' : node.content,
+        isGenerated: false,
+        generationMeta: null,
+        createdAt: now,
+        updatedAt: now,
+        position: normalizePosition({ x: node.position.x + offset.x, y: node.position.y + offset.y }, isSnapToGridEnabled)
+      }
+    })
+    const duplicatedEdges = selection.edges.map((edge) => ({
+      ...edge,
+      id: crypto.randomUUID(),
+      sourceId: duplicatedIds.get(edge.sourceId) ?? edge.sourceId,
+      targetId: duplicatedIds.get(edge.targetId) ?? edge.targetId
+    }))
+    applySnapshot({
+      ...snapshot,
+      nodes: [...snapshot.nodes, ...duplicatedNodes],
+      edges: [...snapshot.edges, ...duplicatedEdges]
+    })
     setIsProjectDirty(true)
-    selectNode(duplicatedNode.id)
+    setSelectedNodes(duplicatedNodes.map((node) => node.id))
     setNodeMenu(null)
-    setStatus('Node duplicated')
+    setStatus(duplicatedNodes.length === 1 ? 'Node duplicated' : `${duplicatedNodes.length} nodes duplicated`)
+  }
+
+  async function duplicateNode(nodeId: string, options?: { position?: { x: number; y: number }; clearTextContent?: boolean }) {
+    const graphNode = snapshotRef.current?.nodes.find((node) => node.id === nodeId)
+    if (!graphNode) return
+    await duplicateSelection({ nodes: [graphNode], edges: [] }, {
+      clearTextContent: options?.clearTextContent,
+      targetCenter: options?.position
+        ? { x: options.position.x + graphNode.size.width / 2, y: options.position.y + graphNode.size.height / 2 }
+        : undefined,
+      offset: options?.position ? undefined : { x: 60, y: 60 }
+    })
   }
 
   async function removeEdge(edgeId: string) {
@@ -763,13 +831,15 @@ function GraphChatApp() {
         void saveProject()
         return
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && selectedNode) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && selectedNodeIds.length > 0) {
         event.preventDefault()
-        copiedNodeIdRef.current = selectedNode.id
-        setStatus(`Copied ${selectedNode.title || 'node'}`)
+        const copiedSelection = getCopiedSelection(selectedNodeIds)
+        if (!copiedSelection) return
+        copiedSelectionRef.current = copiedSelection
+        setStatus(copiedSelection.nodes.length === 1 ? `Copied ${copiedSelection.nodes[0]?.title || 'node'}` : `Copied ${copiedSelection.nodes.length} nodes`)
         return
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v' && copiedNodeIdRef.current) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v' && copiedSelectionRef.current) {
         event.preventDefault()
         const bounds = mainRef.current?.getBoundingClientRect()
         const center = bounds
@@ -778,17 +848,20 @@ function GraphChatApp() {
               y: bounds.top + bounds.height / 2
             })
           : undefined
-        void duplicateNode(copiedNodeIdRef.current, center ? { position: center, clearTextContent: true } : { clearTextContent: true })
+        void duplicateSelection(copiedSelectionRef.current, center ? { targetCenter: center } : undefined)
         return
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd' && selectedNode) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd' && selectedNodeIds.length > 0) {
         event.preventDefault()
-        void duplicateNode(selectedNode.id)
+        const selection = getCopiedSelection(selectedNodeIds)
+        if (!selection) return
+        void duplicateSelection(selection)
+        return
       }
       if (event.key === 'Delete' && selectedEdgeId) {
         event.preventDefault()
         void removeEdge(selectedEdgeId)
-      } else if (event.key === 'Delete' && selectedNode) {
+      } else if (event.key === 'Delete' && selectedNodeIds.length > 0) {
         event.preventDefault()
         void removeSelected()
       }
