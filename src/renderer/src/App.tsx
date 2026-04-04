@@ -116,6 +116,8 @@ function GraphChatApp() {
   const [modelFilter, setModelFilter] = useState('')
   const [projectDialog, setProjectDialog] = useState<ProjectDialogState>(null)
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null)
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null)
+  const [renamingValue, setRenamingValue] = useState('')
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<AppNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const snapshotRef = useRef<ProjectSnapshot | null>(null)
@@ -353,12 +355,10 @@ function GraphChatApp() {
     setProjectDialog(null)
   }
 
-  async function renameProject(project: ProjectRecord) {
-    setProjectDialog({
-      mode: 'rename',
-      projectId: project.id,
-      value: project.name
-    })
+  function renameProject(project: ProjectRecord) {
+    setRenamingProjectId(project.id)
+    setRenamingValue(project.name)
+    setProjectMenu(null)
   }
 
   async function submitRenameProject(projectId: string, name: string) {
@@ -367,7 +367,6 @@ function GraphChatApp() {
     const result = await window.graphChat.renameProject(projectId, trimmed)
     setProjects(result.projects)
     applySnapshot(result.snapshot)
-    setProjectDialog(null)
   }
 
   async function deleteProject(project: ProjectRecord) {
@@ -863,6 +862,19 @@ function GraphChatApp() {
         void duplicateSelection(selection)
         return
       }
+      if (event.key === 'a' && !renamingProjectId) {
+        event.preventDefault()
+        reactFlow.fitView({ duration: 300, padding: 0.1 })
+        return
+      }
+      if (event.key === 'f' && selectedNode && !renamingProjectId) {
+        event.preventDefault()
+        reactFlow.fitBounds(
+          { x: selectedNode.position.x, y: selectedNode.position.y, width: selectedNode.size.width, height: selectedNode.size.height },
+          { duration: 300, padding: 0.2 }
+        )
+        return
+      }
       if (event.key === 'Delete' && selectedEdgeId) {
         event.preventDefault()
         void removeEdge(selectedEdgeId)
@@ -877,6 +889,7 @@ function GraphChatApp() {
         setIsModelModalOpen(false)
         setProjectDialog(null)
         setProjectMenu(null)
+        setRenamingProjectId(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -994,10 +1007,26 @@ function GraphChatApp() {
           {projects.map((project) => (
             <div key={project.id} className={`relative mb-1.5 rounded-[10px] px-3 py-3 ${project.id === activeProjectId ? 'bg-[rgba(124,90,247,0.18)] text-[var(--text)]' : 'text-[var(--text-dim)]'}`}>
               <div className="flex items-start gap-3">
-                <button className="flex-1 text-left" onClick={() => void switchProject(project.id)}>
-                  <div className={`truncate text-[13px] font-medium ${project.id === activeProjectId ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'}`}>{project.name}</div>
+                <div className="flex-1 min-w-0" onClick={() => renamingProjectId !== project.id && void switchProject(project.id)}>
+                  {renamingProjectId === project.id ? (
+                    <input
+                      autoFocus
+                      value={renamingValue}
+                      onChange={(event) => setRenamingValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') { void submitRenameProject(project.id, renamingValue); setRenamingProjectId(null) }
+                        if (event.key === 'Escape') setRenamingProjectId(null)
+                        event.stopPropagation()
+                      }}
+                      onBlur={() => { void submitRenameProject(project.id, renamingValue); setRenamingProjectId(null) }}
+                      onClick={(event) => event.stopPropagation()}
+                      className="w-full rounded-md border border-[var(--accent-border)] bg-[var(--bg-input)] px-2 py-0.5 text-[13px] font-medium text-[var(--text)] outline-none"
+                    />
+                  ) : (
+                    <div className={`truncate text-[13px] font-medium ${project.id === activeProjectId ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'}`}>{project.name}</div>
+                  )}
                   <div className={`truncate text-[11px] ${project.id === activeProjectId ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)]'}`}>{new Date(project.updatedAt).toLocaleString()}</div>
-                </button>
+                </div>
                 <button
                   className={`rounded-full px-2 py-1 text-sm ${project.id === activeProjectId ? 'text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]' : 'text-[var(--text-faint)] hover:bg-white/5 hover:text-[var(--text-dim)]'}`}
                   onClick={(event) => {
@@ -1230,7 +1259,7 @@ function GraphChatApp() {
       <section style={{ width: rightInspectorWidth }} className="flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)]">
         <div className="border-b border-[var(--border)] px-5 py-3">
           <h2 className="text-[18px] font-semibold">{selectedNode?.title || 'Properties'}</h2>
-          <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? defaultTitle(selectedNode.type) : (selectedNodeIds.length > 1 ? `${selectedNodeIds.length} nodes selected` : 'General settings')}</p>
+          <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? displayNodeTypeLabel(selectedNode.type, selectedNode.isLocal) : (selectedNodeIds.length > 1 ? `${selectedNodeIds.length} nodes selected` : 'General settings')}</p>
         </div>
         {selectedNode ? (
           <NodeEditor
