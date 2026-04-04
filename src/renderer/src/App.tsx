@@ -1287,7 +1287,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const [isComposing, setIsComposing] = useState(false)
   const wasEditingRef = useRef(data.isEditing)
   const colors = {
-    text: 'border-[var(--border-strong)] bg-[var(--bg-card)]',
+    text: 'border-[#6b7280] bg-[var(--bg-card)]',
     context: 'border-[rgb(90,100,210)] bg-[var(--bg-card)]',
     instruction: 'border-[rgb(156,76,196)] bg-[var(--bg-card)]'
   } as const
@@ -1307,7 +1307,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   }
 
   return (
-    <div className={`relative h-full w-full rounded-3xl border-2 px-7 py-5 shadow-lg shadow-black/30 transition ${colors[node.type]} ${data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
+    <div className={`relative h-full w-full rounded-3xl border-2 px-9 py-6 shadow-lg shadow-black/30 transition ${colors[node.type]} ${data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
       <NodeResizeControl
         position="bottom-right"
         className={`${data.isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none'} !h-3 !w-3 !rounded-[6px] !border !border-[var(--text-faint)] !bg-[var(--text)] shadow`}
@@ -1336,7 +1336,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
       )}
       <Handle id="output" type="source" position={Position.Right} className="!h-5 !w-5 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
       <div className="flex h-full flex-col">
-        <div className="mb-2 flex items-start gap-2">
+        <div className="mb-4 flex items-start gap-2">
           <div className="flex-1">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-dim)]">{displayNodeTypeLabel(node.type, node.isLocal)}</div>
             <div className="font-serif text-lg font-semibold">{node.title || 'Untitled'}</div>
