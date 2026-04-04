@@ -20,7 +20,7 @@ export class LlamaServerManager {
 
   constructor() {
     this.rootDir = app.isPackaged ? process.cwd() : app.getAppPath()
-    this.serverPath = join(this.rootDir, 'bin', 'llama-server', 'llama-b8648-bin-win-cuda-13.1-x64', 'llama-server.exe')
+    this.serverPath = join(this.rootDir, 'bin', 'llama-server', 'llama-b8664-bin-win-cuda-13.1-x64', 'llama-server.exe')
     this.modelsDir = join(this.rootDir, 'models')
     this.settings = this.buildSettings(findDefaultModel(this.listModels()))
   }
