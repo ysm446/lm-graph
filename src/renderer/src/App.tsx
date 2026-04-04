@@ -1554,9 +1554,17 @@ function NodeEditor({
           )}
         </div>
       )}
-      <div className="inline-flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
-        <CpuIcon className="h-3.5 w-3.5" />
-        <span>{node.model ? displayModelName(node.model) : (currentModelName ? displayModelName(currentModelName) : 'default')}</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
+        <div className="inline-flex items-center gap-1.5">
+          <CpuIcon className="h-3.5 w-3.5" />
+          <span>{node.model ? displayModelName(node.model) : (currentModelName ? displayModelName(currentModelName) : 'default')}</span>
+        </div>
+        {node.generationMeta && (
+          <div className="inline-flex items-center gap-1.5">
+            <ClockIcon className="h-3.5 w-3.5" />
+            <span>{new Date(node.updatedAt).toLocaleString()}</span>
+          </div>
+        )}
       </div>
     </div>
   )
