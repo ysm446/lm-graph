@@ -1039,7 +1039,7 @@ function GraphChatApp() {
                   ) : (
                     <div className={`truncate text-[13px] font-medium ${project.id === activeProjectId ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'}`}>{project.name}</div>
                   )}
-                  <div className={`truncate text-[11px] ${project.id === activeProjectId ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)]'}`}>{new Date(project.updatedAt).toLocaleString()}</div>
+                  <div className={`truncate text-[11px] ${project.id === activeProjectId ? 'text-[var(--text-dim)]' : 'text-[var(--text-faint)]'}`}>{new Date(project.updatedAt).toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <button
                   className={`rounded-full px-2 py-1 text-sm ${project.id === activeProjectId ? 'text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]' : 'text-[var(--text-faint)] hover:bg-white/5 hover:text-[var(--text-dim)]'}`}
@@ -1449,7 +1449,18 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             className={`node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-sm leading-6 text-[var(--text)]${data.isSelected ? ' nowheel' : ''}`}
           >{node.content || 'No content yet.'}</div>
         )}
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
+        {node.generationMeta && (
+          <div className="mt-3 flex items-center gap-x-2 text-xs text-[var(--text-dim)]">
+            {node.model && (
+              <MetaItem icon={<CpuIcon className="h-3.5 w-3.5" />} label={displayModelName(node.model)} />
+            )}
+            <div className="ml-auto inline-flex items-center gap-1">
+              <CalendarIcon className="h-3.5 w-3.5" />
+              <span>{new Date(node.updatedAt).toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          </div>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
           {node.generationMeta?.completionTokens != null && <MetaItem icon={<MessageIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} tokens`} />}
           {node.generationMeta?.tokensPerSecond != null && <MetaItem icon={<BoltIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.tokensPerSecond.toFixed(1)} tok/s`} />}
           {node.generationMeta?.durationSeconds != null && <MetaItem icon={<ClockIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.durationSeconds.toFixed(2)}s`} />}
@@ -1576,8 +1587,8 @@ function NodeEditor({
         </div>
         {node.generationMeta && (
           <div className="inline-flex items-center gap-1.5">
-            <ClockIcon className="h-3.5 w-3.5" />
-            <span>{new Date(node.updatedAt).toLocaleString()}</span>
+            <CalendarIcon className="h-3.5 w-3.5" />
+            <span>{new Date(node.updatedAt).toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
           </div>
         )}
       </div>
@@ -1984,6 +1995,17 @@ function StopIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
       <rect x="5" y="5" width="14" height="14" rx="2" />
+    </svg>
+  )
+}
+
+function CalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4" />
+      <path d="M8 2v4" />
+      <path d="M3 10h18" />
     </svg>
   )
 }
