@@ -82,11 +82,13 @@ export interface UiPreferences {
   isMiniMapVisible: boolean
   isSnapToGridEnabled: boolean
   edgeType: 'default' | 'smoothstep' | 'step'
+  isProofreadEnabled: boolean
   leftSidebarWidth: number
   rightInspectorWidth: number
   generalSections: {
     context: boolean
     interface: boolean
+    editing: boolean
   }
 }
 

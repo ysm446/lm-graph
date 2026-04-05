@@ -36,6 +36,23 @@ contextBridge.exposeInMainWorld('graphChat', {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('generation:error', listener)
     return () => ipcRenderer.off('generation:error', listener)
+  },
+  startProofread: (proofreadId: string, text: string) => ipcRenderer.invoke('proofread:start', { proofreadId, text }),
+  stopProofread: (proofreadId: string) => ipcRenderer.invoke('proofread:stop', proofreadId),
+  onProofreadDelta: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('proofread:delta', listener)
+    return () => ipcRenderer.off('proofread:delta', listener)
+  },
+  onProofreadDone: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('proofread:done', listener)
+    return () => ipcRenderer.off('proofread:done', listener)
+  },
+  onProofreadError: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('proofread:error', listener)
+    return () => ipcRenderer.off('proofread:error', listener)
   }
 })
 

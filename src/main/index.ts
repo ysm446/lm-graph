@@ -9,6 +9,7 @@ import type { GraphEdgeRecord, GraphNodeRecord, NodeType, ProjectSnapshot, TextI
 const repository = new GraphRepository()
 const llamaServer = new LlamaServerManager()
 const generationControllers = new Map<string, AbortController>()
+const proofreadControllers = new Map<string, AbortController>()
 const preferencesPath = join(app.getPath('userData'), 'preferences.json')
 const defaultUiPreferences: UiPreferences = {
   contextLength: 32768,
@@ -18,11 +19,13 @@ const defaultUiPreferences: UiPreferences = {
   isMiniMapVisible: true,
   isSnapToGridEnabled: true,
   edgeType: 'default',
+  isProofreadEnabled: true,
   leftSidebarWidth: 288,
   rightInspectorWidth: 380,
   generalSections: {
     context: true,
-    interface: true
+    interface: true,
+    editing: true
   }
 }
 let uiPreferencesCache: UiPreferences = { ...defaultUiPreferences, generalSections: { ...defaultUiPreferences.generalSections } }
@@ -170,6 +173,16 @@ function registerIpc(): void {
     if (result.canceled || !result.filePath) return { saved: false }
     await writeFile(result.filePath, content, 'utf8')
     return { saved: true, filePath: result.filePath }
+  })
+  ipcMain.handle('proofread:start', async (event, { proofreadId, text }: { proofreadId: string; text: string }) => {
+    const controller = new AbortController()
+    proofreadControllers.set(proofreadId, controller)
+    void streamProofread({ event, proofreadId, text, signal: controller.signal })
+      .finally(() => proofreadControllers.delete(proofreadId))
+  })
+  ipcMain.handle('proofread:stop', async (_event, proofreadId: string) => {
+    proofreadControllers.get(proofreadId)?.abort()
+    proofreadControllers.delete(proofreadId)
   })
   ipcMain.handle('generation:stop', async (_event, generationId: string) => {
     generationControllers.get(generationId)?.abort()
@@ -414,6 +427,54 @@ Write the final content for this target node.`
   }
 }
 
+async function streamProofread(input: { event: Electron.IpcMainInvokeEvent; proofreadId: string; text: string; signal: AbortSignal }): Promise<void> {
+  try {
+    await llamaServer.ensureRunning()
+    const response = await fetch(`${llamaServer.getSettings().llamaBaseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: llamaServer.getSettings().llamaModelAlias,
+        stream: true,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: 'You are a proofreader. Return only the corrected text with no explanation, no markdown formatting, and no additional comments. Preserve the original language and style.' },
+          { role: 'user', content: input.text }
+        ]
+      }),
+      signal: input.signal
+    })
+    if (!response.ok || !response.body) throw new Error(`Proofread request failed: ${response.status}`)
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let content = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const chunks = buffer.split('\n\n')
+      buffer = chunks.pop() ?? ''
+      for (const chunk of chunks) {
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data:')) continue
+          const data = line.slice(5).trim()
+          if (data === '[DONE]') continue
+          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> }
+          const delta = parsed.choices?.[0]?.delta?.content ?? ''
+          if (!delta) continue
+          content += delta
+          input.event.sender.send('proofread:delta', { proofreadId: input.proofreadId, content: stripThinkTags(content) })
+        }
+      }
+    }
+    input.event.sender.send('proofread:done', { proofreadId: input.proofreadId, content: stripThinkTags(content) })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).name === 'AbortError') return
+    input.event.sender.send('proofread:error', { proofreadId: input.proofreadId, message: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 function stripThinkTags(content: string): string {
   return content
     .replace(/^<\|channel\>thought\s*<channel\|>\s*/i, '')
@@ -507,11 +568,13 @@ function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
     isMiniMapVisible: input.isMiniMapVisible ?? defaultUiPreferences.isMiniMapVisible,
     isSnapToGridEnabled: input.isSnapToGridEnabled ?? defaultUiPreferences.isSnapToGridEnabled,
     edgeType: input.edgeType ?? defaultUiPreferences.edgeType,
+    isProofreadEnabled: input.isProofreadEnabled ?? defaultUiPreferences.isProofreadEnabled,
     leftSidebarWidth: input.leftSidebarWidth ?? defaultUiPreferences.leftSidebarWidth,
     rightInspectorWidth: input.rightInspectorWidth ?? defaultUiPreferences.rightInspectorWidth,
     generalSections: {
       context: input.generalSections?.context ?? defaultUiPreferences.generalSections.context,
-      interface: input.generalSections?.interface ?? defaultUiPreferences.generalSections.interface
+      interface: input.generalSections?.interface ?? defaultUiPreferences.generalSections.interface,
+      editing: input.generalSections?.editing ?? defaultUiPreferences.generalSections.editing
     }
   }
 }

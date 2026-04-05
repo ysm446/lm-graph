@@ -35,6 +35,7 @@ type AppNodeData = {
   onStopEdit: () => void
   onGenerate: (id: string) => void
   onOpenReader: (id: string) => void
+  onProofreadRequest: (payload: { nodeId: string; text: string; selectionStart: number; selectionEnd: number; rect: DOMRect }) => void
   onResize: (id: string, input: { position: { x: number; y: number }; size: { width: number; height: number } }) => void
 }
 
@@ -107,6 +108,17 @@ function GraphChatApp() {
   const [reader, setReader] = useState<ReaderState | null>(null)
   const [generation, setGeneration] = useState<{ generationId: string; nodeId: string } | null>(null)
   const [generationQueue, setGenerationQueue] = useState<string[]>([])
+  const [proofread, setProofread] = useState<{
+    proofreadId: string
+    nodeId: string
+    originalText: string
+    correctedText: string
+    isStreaming: boolean
+    selectionStart: number
+    selectionEnd: number
+    position: { top: number; left: number; width: number }
+  } | null>(null)
+  const proofreadRef = useRef(proofread)
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState>(null)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState>(null)
   const [isModelModalOpen, setIsModelModalOpen] = useState(false)
@@ -117,9 +129,10 @@ function GraphChatApp() {
   const [isMiniMapVisible, setIsMiniMapVisible] = useState(true)
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true)
   const [edgeType, setEdgeType] = useState<'default' | 'smoothstep' | 'step'>('default')
+  const [isProofreadEnabled, setIsProofreadEnabled] = useState(true)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(DEFAULT_LEFT_SIDEBAR_WIDTH)
   const [rightInspectorWidth, setRightInspectorWidth] = useState(DEFAULT_RIGHT_INSPECTOR_WIDTH)
-  const [generalSections, setGeneralSections] = useState({ context: true, interface: true })
+  const [generalSections, setGeneralSections] = useState({ context: true, interface: true, editing: true })
   const [modelFilter, setModelFilter] = useState('')
   const [projectDialog, setProjectDialog] = useState<ProjectDialogState>(null)
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null)
@@ -138,6 +151,7 @@ function GraphChatApp() {
   activeProjectIdRef.current = activeProjectId
   generationRef.current = generation
   generationQueueRef.current = generationQueue
+  proofreadRef.current = proofread
 
   useEffect(() => {
     void window.graphChat.bootstrap().then(({ projects, snapshot, settings, uiPreferences }) => {
@@ -148,6 +162,7 @@ function GraphChatApp() {
       setIsMiniMapVisible(uiPreferences.isMiniMapVisible)
       setIsSnapToGridEnabled(uiPreferences.isSnapToGridEnabled)
       setEdgeType(uiPreferences.edgeType)
+      setIsProofreadEnabled(uiPreferences.isProofreadEnabled)
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
       setRightInspectorWidth(uiPreferences.rightInspectorWidth)
       setGeneralSections(uiPreferences.generalSections)
@@ -170,12 +185,13 @@ function GraphChatApp() {
       isMiniMapVisible,
       isSnapToGridEnabled,
       edgeType,
+      isProofreadEnabled,
       leftSidebarWidth,
       rightInspectorWidth,
       generalSections
     }
     void window.graphChat.savePreferences(payload)
-  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, leftSidebarWidth, rightInspectorWidth, generalSections])
+  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, leftSidebarWidth, rightInspectorWidth, generalSections])
 
   useEffect(() => {
     setNodes((current) => current.map((node) => ({ ...node, data: { ...node.data, isGenerating: generation?.nodeId === node.id } })))
@@ -214,10 +230,22 @@ function GraphChatApp() {
       setError(message)
       setStatus('Generation failed')
     })
+    const offProofreadDelta = window.graphChat.onProofreadDelta(({ proofreadId, content }) => {
+      setProofread((current) => current?.proofreadId === proofreadId ? { ...current, correctedText: content } : current)
+    })
+    const offProofreadDone = window.graphChat.onProofreadDone(({ proofreadId, content }) => {
+      setProofread((current) => current?.proofreadId === proofreadId ? { ...current, correctedText: content, isStreaming: false } : current)
+    })
+    const offProofreadError = window.graphChat.onProofreadError(({ proofreadId }) => {
+      setProofread((current) => current?.proofreadId === proofreadId ? null : current)
+    })
     return () => {
       offDelta()
       offDone()
       offError()
+      offProofreadDelta()
+      offProofreadDone()
+      offProofreadError()
     }
   }, [])
 
@@ -349,6 +377,7 @@ function GraphChatApp() {
         onStopEdit: () => setEditingNodeId(null),
         onGenerate: handleGenerate,
         onOpenReader: openReader,
+        onProofreadRequest: handleProofreadRequest,
         onResize: handleResize
       }
     })))
@@ -585,6 +614,46 @@ function GraphChatApp() {
     setGenerationQueue([])
     setGeneration(null)
     setStatus('Generation stopped')
+  }
+
+  function handleProofreadRequest(payload: { nodeId: string; text: string; selectionStart: number; selectionEnd: number; rect: DOMRect }) {
+    if (!isProofreadEnabled) return
+    if (proofreadRef.current) {
+      void window.graphChat.stopProofread(proofreadRef.current.proofreadId)
+    }
+    const proofreadId = crypto.randomUUID()
+    setProofread({
+      proofreadId,
+      nodeId: payload.nodeId,
+      originalText: payload.text,
+      correctedText: '',
+      isStreaming: true,
+      selectionStart: payload.selectionStart,
+      selectionEnd: payload.selectionEnd,
+      position: { top: payload.rect.bottom + 8, left: payload.rect.left, width: payload.rect.width }
+    })
+    void window.graphChat.startProofread(proofreadId, payload.text)
+  }
+
+  function acceptProofread() {
+    const p = proofreadRef.current
+    if (!p || !p.correctedText) return
+    const snapshot = snapshotRef.current
+    const node = snapshot?.nodes.find((n) => n.id === p.nodeId)
+    if (!node) return
+    const newContent = node.content.slice(0, p.selectionStart) + p.correctedText + node.content.slice(p.selectionEnd)
+    const updated = { ...node, content: newContent }
+    mutateLocalNode(updated)
+    void persistNode(updated)
+    setEditingNodeId(null)
+    setProofread(null)
+  }
+
+  function dismissProofread() {
+    if (proofreadRef.current) {
+      void window.graphChat.stopProofread(proofreadRef.current.proofreadId)
+    }
+    setProofread(null)
   }
 
   function openReader(nodeId: string) {
@@ -872,6 +941,18 @@ function GraphChatApp() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (proofreadRef.current) {
+        if (event.key === 'Tab') {
+          event.preventDefault()
+          acceptProofread()
+          return
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          dismissProofread()
+          return
+        }
+      }
       if (isEditableElement(event.target)) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault()
@@ -1222,6 +1303,43 @@ function GraphChatApp() {
             </div>
           </div>
         )}
+        {proofread && (
+          <div
+            className="fixed z-50 w-80 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-card)] shadow-2xl"
+            style={{ top: proofread.position.top, left: proofread.position.left, maxWidth: proofread.position.width }}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
+              <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--text-dim)]">校正</span>
+              {proofread.isStreaming && <SpinnerIcon className="h-3.5 w-3.5 animate-spin text-[var(--text-faint)]" />}
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[11px] text-[var(--text-faint)] mb-1.5">元のテキスト</p>
+              <p className="text-[12px] text-[var(--text-dim)] line-through leading-5">{proofread.originalText}</p>
+              {proofread.correctedText && (
+                <>
+                  <p className="text-[11px] text-[var(--text-faint)] mt-3 mb-1.5">校正後</p>
+                  <p className="text-[12px] text-[var(--text)] leading-5">{proofread.correctedText}</p>
+                </>
+              )}
+            </div>
+            {!proofread.isStreaming && proofread.correctedText && (
+              <div className="flex items-center gap-2 border-t border-[var(--border)] px-4 py-2.5">
+                <button
+                  className="rounded-[8px] bg-[var(--accent)] px-3 py-1 text-[12px] font-medium text-white hover:bg-[var(--accent-hover)]"
+                  onClick={acceptProofread}
+                >
+                  適用 (Tab)
+                </button>
+                <button
+                  className="rounded-[8px] px-3 py-1 text-[12px] text-[var(--text-dim)] hover:bg-white/5"
+                  onClick={dismissProofread}
+                >
+                  キャンセル (Esc)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {projectDialog && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => setProjectDialog(null)}>
             <div className="w-full max-w-md rounded-[20px] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -1334,11 +1452,13 @@ function GraphChatApp() {
             isMiniMapVisible={isMiniMapVisible}
             isSnapToGridEnabled={isSnapToGridEnabled}
             edgeType={edgeType}
+            isProofreadEnabled={isProofreadEnabled}
             sections={generalSections}
             onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
             onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
             onToggleSnapToGrid={toggleSnapToGrid}
             onChangeEdgeType={setEdgeType}
+            onToggleProofread={() => setIsProofreadEnabled((current) => !current)}
             onChangeContextLength={(value) => void handleContextLengthChange(value)}
             onChangeTemperature={(value) => void handleTemperatureChange(value)}
           />
@@ -1369,6 +1489,8 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const [draftContent, setDraftContent] = useState(node.content)
   const [isComposing, setIsComposing] = useState(false)
   const wasEditingRef = useRef(data.isEditing)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const proofreadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { zoom } = useViewport()
   const FADE_START = 0.65
   const FADE_END = 0.5
@@ -1486,6 +1608,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
         </div>
         {data.isEditing ? (
           <textarea
+            ref={textareaRef}
             value={draftContent}
             onChange={(event) => setDraftContent(event.target.value)}
             onCompositionStart={() => setIsComposing(true)}
@@ -1496,6 +1619,16 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             onBlur={() => {
               setIsComposing(false)
               commitDraftContent()
+            }}
+            onSelect={(event) => {
+              const el = event.currentTarget
+              const selected = el.value.slice(el.selectionStart, el.selectionEnd).trim()
+              if (proofreadTimerRef.current) clearTimeout(proofreadTimerRef.current)
+              if (!selected) return
+              proofreadTimerRef.current = setTimeout(() => {
+                const rect = el.getBoundingClientRect()
+                data.onProofreadRequest({ nodeId: node.id, text: selected, selectionStart: el.selectionStart, selectionEnd: el.selectionEnd, rect })
+              }, 600)
             }}
             onMouseDown={(event) => event.stopPropagation()}
             placeholder="No content yet."
@@ -1658,11 +1791,13 @@ function GeneralInspector({
   isMiniMapVisible,
   isSnapToGridEnabled,
   edgeType,
+  isProofreadEnabled,
   sections,
   onToggleSection,
   onToggleMiniMap,
   onToggleSnapToGrid,
   onChangeEdgeType,
+  onToggleProofread,
   onChangeContextLength,
   onChangeTemperature
 }: {
@@ -1670,11 +1805,13 @@ function GeneralInspector({
   isMiniMapVisible: boolean
   isSnapToGridEnabled: boolean
   edgeType: 'default' | 'smoothstep' | 'step'
-  sections: { context: boolean; interface: boolean }
-  onToggleSection: (section: 'context' | 'interface') => void
+  isProofreadEnabled: boolean
+  sections: { context: boolean; interface: boolean; editing: boolean }
+  onToggleSection: (section: 'context' | 'interface' | 'editing') => void
   onToggleMiniMap: () => void
   onToggleSnapToGrid: () => void
   onChangeEdgeType: (value: 'default' | 'smoothstep' | 'step') => void
+  onToggleProofread: () => void
   onChangeContextLength: (value: number) => void
   onChangeTemperature: (value: number) => void
 }) {
@@ -1833,6 +1970,26 @@ function GeneralInspector({
             <option value="smoothstep">Smooth Step</option>
             <option value="step">Step</option>
           </select>
+        </div>
+      </InspectorSection>
+
+      <InspectorSection
+        title="Editing"
+        icon={<EditIcon className="h-[15px] w-[15px]" />}
+        open={sections.editing}
+        onToggle={() => onToggleSection('editing')}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--text-dim)]">Proofread on Select</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isProofreadEnabled}
+            onClick={onToggleProofread}
+            className={`relative h-[16px] w-[28px] rounded-full transition ${isProofreadEnabled ? 'bg-[var(--accent-hover)]' : 'bg-[rgba(255,255,255,0.1)]'}`}
+          >
+            <span className={`absolute top-[2px] h-[12px] w-[12px] rounded-full transition ${isProofreadEnabled ? 'left-[14px] bg-white' : 'left-[2px] bg-[rgba(255,255,255,0.35)]'}`} />
+          </button>
         </div>
       </InspectorSection>
     </div>
@@ -2079,6 +2236,15 @@ function CalendarIcon({ className }: { className?: string }) {
       <path d="M16 2v4" />
       <path d="M8 2v4" />
       <path d="M3 10h18" />
+    </svg>
+  )
+}
+
+function EditIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
     </svg>
   )
 }

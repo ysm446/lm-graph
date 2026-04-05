@@ -28,7 +28,7 @@ src/
 - `GraphNodeRecord`: node with position, size, content, generationMeta
 - `GraphEdgeRecord`: edge connecting sourceHandle → targetHandle
 - `AppSettings`: llama-server config (model path, context length, temperature)
-- `UiPreferences`: sidebar widths, panel visibility, snap-to-grid
+- `UiPreferences`: sidebar widths, panel visibility, snap-to-grid, edge type, proofread toggle, section open/close state
 
 ### Node handles
 
@@ -51,6 +51,8 @@ All nodes have one output handle on the right.
 - Models are `.gguf` files placed in the `models/` directory
 - Communicates via HTTP on localhost (default port 8080)
 - Streaming completions via `GenerationMeta` (tokens, speed, duration)
+- Generation requests are queued (`generationQueue` state) and executed sequentially
+- Proofread requests (`proofread:start` / `proofread:stop` IPC) stream corrected text independently of node generation
 
 ## Development
 
@@ -69,3 +71,6 @@ npm run build      # Type-check + build for production
 - Japanese text must not be garbled — be careful with encoding
 - Token estimation uses `estimateTokenCount()` which handles CJK characters correctly
 - IPC between main and renderer uses Electron's `ipcMain`/`ipcRenderer`
+- Right sidebar has three collapsible sections: **Context and Offload** (model settings), **Interface** (MiniMap, Snap to Grid, Edge Style), **Editing** (Proofread on Select)
+- Node titles are shown outside the node at low zoom levels (`zoom < 0.65`) using `useViewport()` with inverse-scale font sizing
+- Generating nodes display a pulsing purple glow animation via the `.node-generating-border` CSS class
