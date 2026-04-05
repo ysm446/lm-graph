@@ -20,6 +20,7 @@ const defaultUiPreferences: UiPreferences = {
   isSnapToGridEnabled: true,
   edgeType: 'default',
   isProofreadEnabled: true,
+  proofreadSystemPrompt: 'You are a proofreader. Return only the corrected text with no explanation, no markdown formatting, and no additional comments. Preserve the original language and style.',
   leftSidebarWidth: 288,
   rightInspectorWidth: 380,
   generalSections: {
@@ -174,10 +175,10 @@ function registerIpc(): void {
     await writeFile(result.filePath, content, 'utf8')
     return { saved: true, filePath: result.filePath }
   })
-  ipcMain.handle('proofread:start', async (event, { proofreadId, text }: { proofreadId: string; text: string }) => {
+  ipcMain.handle('proofread:start', async (event, { proofreadId, text, systemPrompt }: { proofreadId: string; text: string; systemPrompt?: string }) => {
     const controller = new AbortController()
     proofreadControllers.set(proofreadId, controller)
-    void streamProofread({ event, proofreadId, text, signal: controller.signal })
+    void streamProofread({ event, proofreadId, text, systemPrompt: systemPrompt ?? uiPreferencesCache.proofreadSystemPrompt, signal: controller.signal })
       .finally(() => proofreadControllers.delete(proofreadId))
   })
   ipcMain.handle('proofread:stop', async (_event, proofreadId: string) => {
@@ -427,7 +428,7 @@ Write the final content for this target node.`
   }
 }
 
-async function streamProofread(input: { event: Electron.IpcMainInvokeEvent; proofreadId: string; text: string; signal: AbortSignal }): Promise<void> {
+async function streamProofread(input: { event: Electron.IpcMainInvokeEvent; proofreadId: string; text: string; systemPrompt: string; signal: AbortSignal }): Promise<void> {
   try {
     await llamaServer.ensureRunning()
     const response = await fetch(`${llamaServer.getSettings().llamaBaseUrl}/v1/chat/completions`, {
@@ -438,7 +439,7 @@ async function streamProofread(input: { event: Electron.IpcMainInvokeEvent; proo
         stream: true,
         temperature: 0.3,
         messages: [
-          { role: 'system', content: 'You are a proofreader. Return only the corrected text with no explanation, no markdown formatting, and no additional comments. Preserve the original language and style.' },
+          { role: 'system', content: input.systemPrompt },
           { role: 'user', content: input.text }
         ]
       }),
@@ -569,6 +570,7 @@ function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
     isSnapToGridEnabled: input.isSnapToGridEnabled ?? defaultUiPreferences.isSnapToGridEnabled,
     edgeType: input.edgeType ?? defaultUiPreferences.edgeType,
     isProofreadEnabled: input.isProofreadEnabled ?? defaultUiPreferences.isProofreadEnabled,
+    proofreadSystemPrompt: input.proofreadSystemPrompt ?? defaultUiPreferences.proofreadSystemPrompt,
     leftSidebarWidth: input.leftSidebarWidth ?? defaultUiPreferences.leftSidebarWidth,
     rightInspectorWidth: input.rightInspectorWidth ?? defaultUiPreferences.rightInspectorWidth,
     generalSections: {

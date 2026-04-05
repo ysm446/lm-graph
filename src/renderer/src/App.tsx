@@ -35,7 +35,7 @@ type AppNodeData = {
   onStopEdit: () => void
   onGenerate: (id: string) => void
   onOpenReader: (id: string) => void
-  onProofreadRequest: (payload: { nodeId: string; text: string; selectionStart: number; selectionEnd: number; rect: DOMRect }) => void
+  onProofreadRequest: (payload: { nodeId: string; text: string; selectionStart: number; selectionEnd: number; fullContent: string; rect: DOMRect }) => void
   onResize: (id: string, input: { position: { x: number; y: number }; size: { width: number; height: number } }) => void
 }
 
@@ -77,6 +77,7 @@ type ReaderState = {
   content: string
 }
 
+const DEFAULT_PROOFREAD_SYSTEM_PROMPT = 'You are a proofreader. Return only the corrected text with no explanation, no markdown formatting, and no additional comments. Preserve the original language and style.'
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 288
 const DEFAULT_RIGHT_INSPECTOR_WIDTH = 380
 const MIN_LEFT_SIDEBAR_WIDTH = 220
@@ -116,7 +117,8 @@ function GraphChatApp() {
     isStreaming: boolean
     selectionStart: number
     selectionEnd: number
-    position: { top: number; left: number; width: number }
+    fullContent: string
+    position: { top: number; left: number }
   } | null>(null)
   const proofreadRef = useRef(proofread)
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState>(null)
@@ -130,6 +132,7 @@ function GraphChatApp() {
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true)
   const [edgeType, setEdgeType] = useState<'default' | 'smoothstep' | 'step'>('default')
   const [isProofreadEnabled, setIsProofreadEnabled] = useState(true)
+  const [proofreadSystemPrompt, setProofreadSystemPrompt] = useState(DEFAULT_PROOFREAD_SYSTEM_PROMPT)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(DEFAULT_LEFT_SIDEBAR_WIDTH)
   const [rightInspectorWidth, setRightInspectorWidth] = useState(DEFAULT_RIGHT_INSPECTOR_WIDTH)
   const [generalSections, setGeneralSections] = useState({ context: true, interface: true, editing: true })
@@ -163,6 +166,7 @@ function GraphChatApp() {
       setIsSnapToGridEnabled(uiPreferences.isSnapToGridEnabled)
       setEdgeType(uiPreferences.edgeType)
       setIsProofreadEnabled(uiPreferences.isProofreadEnabled)
+      if (uiPreferences.proofreadSystemPrompt) setProofreadSystemPrompt(uiPreferences.proofreadSystemPrompt)
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
       setRightInspectorWidth(uiPreferences.rightInspectorWidth)
       setGeneralSections(uiPreferences.generalSections)
@@ -616,7 +620,7 @@ function GraphChatApp() {
     setStatus('Generation stopped')
   }
 
-  function handleProofreadRequest(payload: { nodeId: string; text: string; selectionStart: number; selectionEnd: number; rect: DOMRect }) {
+  function handleProofreadRequest(payload: { nodeId: string; text: string; selectionStart: number; selectionEnd: number; fullContent: string; rect: DOMRect }) {
     if (!isProofreadEnabled) return
     if (proofreadRef.current) {
       void window.graphChat.stopProofread(proofreadRef.current.proofreadId)
@@ -630,9 +634,10 @@ function GraphChatApp() {
       isStreaming: true,
       selectionStart: payload.selectionStart,
       selectionEnd: payload.selectionEnd,
-      position: { top: payload.rect.bottom + 8, left: payload.rect.left, width: payload.rect.width }
+      fullContent: payload.fullContent,
+      position: { top: payload.rect.top, left: payload.rect.right + 8 }
     })
-    void window.graphChat.startProofread(proofreadId, payload.text)
+    void window.graphChat.startProofread(proofreadId, payload.text, proofreadSystemPrompt)
   }
 
   function acceptProofread() {
@@ -641,11 +646,10 @@ function GraphChatApp() {
     const snapshot = snapshotRef.current
     const node = snapshot?.nodes.find((n) => n.id === p.nodeId)
     if (!node) return
-    const newContent = node.content.slice(0, p.selectionStart) + p.correctedText + node.content.slice(p.selectionEnd)
+    const newContent = p.fullContent.slice(0, p.selectionStart) + p.correctedText + p.fullContent.slice(p.selectionEnd)
     const updated = { ...node, content: newContent }
     mutateLocalNode(updated)
     void persistNode(updated)
-    setEditingNodeId(null)
     setProofread(null)
   }
 
@@ -1306,7 +1310,7 @@ function GraphChatApp() {
         {proofread && (
           <div
             className="fixed z-50 w-80 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-card)] shadow-2xl"
-            style={{ top: proofread.position.top, left: proofread.position.left, maxWidth: proofread.position.width }}
+            style={{ top: proofread.position.top, left: proofread.position.left }}
           >
             <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
               <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--text-dim)]">校正</span>
@@ -1314,11 +1318,11 @@ function GraphChatApp() {
             </div>
             <div className="px-4 py-3">
               <p className="text-[11px] text-[var(--text-faint)] mb-1.5">元のテキスト</p>
-              <p className="text-[12px] text-[var(--text-dim)] line-through leading-5">{proofread.originalText}</p>
+              <p className="text-[12px] text-[var(--text-dim)] line-through leading-5 whitespace-pre-wrap">{proofread.originalText}</p>
               {proofread.correctedText && (
                 <>
                   <p className="text-[11px] text-[var(--text-faint)] mt-3 mb-1.5">校正後</p>
-                  <p className="text-[12px] text-[var(--text)] leading-5">{proofread.correctedText}</p>
+                  <p className="text-[12px] text-[var(--text)] leading-5 whitespace-pre-wrap">{proofread.correctedText}</p>
                 </>
               )}
             </div>
@@ -1459,6 +1463,12 @@ function GraphChatApp() {
             onToggleSnapToGrid={toggleSnapToGrid}
             onChangeEdgeType={setEdgeType}
             onToggleProofread={() => setIsProofreadEnabled((current) => !current)}
+            proofreadSystemPrompt={proofreadSystemPrompt}
+            onSaveProofreadSystemPrompt={(value) => {
+              const resolved = value.trim() === '' ? DEFAULT_PROOFREAD_SYSTEM_PROMPT : value
+              setProofreadSystemPrompt(resolved)
+              void window.graphChat.savePreferences({ proofreadSystemPrompt: resolved })
+            }}
             onChangeContextLength={(value) => void handleContextLengthChange(value)}
             onChangeTemperature={(value) => void handleTemperatureChange(value)}
           />
@@ -1503,9 +1513,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
 
   useEffect(() => {
     if (node.id !== data.graphNode.id) return
-    if (!data.isEditing) {
-      setDraftContent(node.content)
-    }
+    setDraftContent(node.content)
     wasEditingRef.current = data.isEditing
   }, [node.id, node.content, data.isEditing])
 
@@ -1627,7 +1635,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               if (!selected) return
               proofreadTimerRef.current = setTimeout(() => {
                 const rect = el.getBoundingClientRect()
-                data.onProofreadRequest({ nodeId: node.id, text: selected, selectionStart: el.selectionStart, selectionEnd: el.selectionEnd, rect })
+                data.onProofreadRequest({ nodeId: node.id, text: selected, selectionStart: el.selectionStart, selectionEnd: el.selectionEnd, fullContent: el.value, rect })
               }, 600)
             }}
             onMouseDown={(event) => event.stopPropagation()}
@@ -1637,6 +1645,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
         ) : (
           <div
             className={`node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-sm leading-6 text-[var(--text)]${data.isSelected ? ' nowheel' : ''}`}
+            onDoubleClick={() => data.onStartEdit(node.id)}
           >{node.content || 'No content yet.'}</div>
         )}
         {node.generationMeta && (
@@ -1792,12 +1801,14 @@ function GeneralInspector({
   isSnapToGridEnabled,
   edgeType,
   isProofreadEnabled,
+  proofreadSystemPrompt,
   sections,
   onToggleSection,
   onToggleMiniMap,
   onToggleSnapToGrid,
   onChangeEdgeType,
   onToggleProofread,
+  onSaveProofreadSystemPrompt,
   onChangeContextLength,
   onChangeTemperature
 }: {
@@ -1806,12 +1817,14 @@ function GeneralInspector({
   isSnapToGridEnabled: boolean
   edgeType: 'default' | 'smoothstep' | 'step'
   isProofreadEnabled: boolean
+  proofreadSystemPrompt: string
   sections: { context: boolean; interface: boolean; editing: boolean }
   onToggleSection: (section: 'context' | 'interface' | 'editing') => void
   onToggleMiniMap: () => void
   onToggleSnapToGrid: () => void
   onChangeEdgeType: (value: 'default' | 'smoothstep' | 'step') => void
   onToggleProofread: () => void
+  onSaveProofreadSystemPrompt: (value: string) => void
   onChangeContextLength: (value: number) => void
   onChangeTemperature: (value: number) => void
 }) {
@@ -1819,6 +1832,8 @@ function GeneralInspector({
   const defaultTemperature = 0.8
   const [pendingTemperature, setPendingTemperature] = useState(settings?.temperature ?? defaultTemperature)
   const [pendingContextLength, setPendingContextLength] = useState(settings?.contextLength ?? defaultContextLength)
+  const [draftSystemPrompt, setDraftSystemPrompt] = useState(proofreadSystemPrompt)
+  const isSystemPromptChanged = draftSystemPrompt !== proofreadSystemPrompt
   const isTemperatureChanged = pendingTemperature !== defaultTemperature
   const isContextLengthChanged = pendingContextLength !== defaultContextLength
 
@@ -1829,6 +1844,10 @@ function GeneralInspector({
   useEffect(() => {
     setPendingContextLength(settings?.contextLength ?? defaultContextLength)
   }, [settings?.contextLength])
+
+  useEffect(() => {
+    setDraftSystemPrompt(proofreadSystemPrompt)
+  }, [proofreadSystemPrompt])
 
   return (
     <div className="inspector-scrollbar flex-1 overflow-y-auto px-4 py-2">
@@ -1989,6 +2008,23 @@ function GeneralInspector({
             className={`relative h-[16px] w-[28px] rounded-full transition ${isProofreadEnabled ? 'bg-[var(--accent-hover)]' : 'bg-[rgba(255,255,255,0.1)]'}`}
           >
             <span className={`absolute top-[2px] h-[12px] w-[12px] rounded-full transition ${isProofreadEnabled ? 'left-[14px] bg-white' : 'left-[2px] bg-[rgba(255,255,255,0.35)]'}`} />
+          </button>
+        </div>
+        <div className="mt-3 flex flex-col gap-2">
+          <span className="text-[13px] text-[var(--text-dim)]">System Prompt</span>
+          <textarea
+            value={draftSystemPrompt}
+            onChange={(e) => setDraftSystemPrompt(e.target.value)}
+            rows={5}
+            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent-border)]"
+          />
+          <button
+            type="button"
+            disabled={!isSystemPromptChanged}
+            onClick={() => onSaveProofreadSystemPrompt(draftSystemPrompt)}
+            className="self-end rounded-md border border-[var(--border-strong)] bg-[rgba(28,31,43,0.92)] px-3 py-1 text-[12px] text-[var(--text-dim)] transition hover:bg-white/5 hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Save
           </button>
         </div>
       </InspectorSection>

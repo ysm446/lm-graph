@@ -51,7 +51,7 @@ export interface GraphChatApi {
   onGenerationDelta(callback: (payload: { generationId: string; nodeId: string; content: string }) => void): () => void
   onGenerationDone(callback: (payload: { generationId: string; nodeId: string; snapshot: ProjectSnapshot; projects: ProjectRecord[] }) => void): () => void
   onGenerationError(callback: (payload: { generationId: string; message: string; nodeId: string }) => void): () => void
-  startProofread(proofreadId: string, text: string): Promise<void>
+  startProofread(proofreadId: string, text: string, systemPrompt?: string): Promise<void>
   stopProofread(proofreadId: string): Promise<void>
   onProofreadDelta(callback: (payload: { proofreadId: string; content: string }) => void): () => void
   onProofreadDone(callback: (payload: { proofreadId: string; content: string }) => void): () => void

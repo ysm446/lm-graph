@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld('graphChat', {
     ipcRenderer.on('generation:error', listener)
     return () => ipcRenderer.off('generation:error', listener)
   },
-  startProofread: (proofreadId: string, text: string) => ipcRenderer.invoke('proofread:start', { proofreadId, text }),
+  startProofread: (proofreadId: string, text: string, systemPrompt?: string) => ipcRenderer.invoke('proofread:start', { proofreadId, text, systemPrompt }),
   stopProofread: (proofreadId: string) => ipcRenderer.invoke('proofread:stop', proofreadId),
   onProofreadDelta: (callback) => {
     const listener = (_event, payload) => callback(payload)

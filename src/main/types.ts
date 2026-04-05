@@ -83,6 +83,7 @@ export interface UiPreferences {
   isSnapToGridEnabled: boolean
   edgeType: 'default' | 'smoothstep' | 'step'
   isProofreadEnabled: boolean
+  proofreadSystemPrompt: string
   leftSidebarWidth: number
   rightInspectorWidth: number
   generalSections: {
