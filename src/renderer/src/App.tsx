@@ -344,20 +344,12 @@ function GraphChatApp() {
 
   async function createProject() {
     if (!confirmDiscardUnsavedChanges()) return
-    setProjectDialog({
-      mode: 'create',
-      value: `Project ${projects.length + 1}`
-    })
-  }
-
-  async function submitCreateProject(name: string) {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    const result = await window.graphChat.createProject(trimmed)
+    const result = await window.graphChat.createProject('新しいプロジェクト')
     setProjects(result.projects)
     applySnapshot(result.snapshot)
     setIsProjectDirty(false)
-    setProjectDialog(null)
+    setRenamingProjectId(result.snapshot.project.id)
+    setRenamingValue(result.snapshot.project.name)
   }
 
   function renameProject(project: ProjectRecord) {
@@ -1004,14 +996,9 @@ function GraphChatApp() {
             {isProjectDirty && <span className="text-xs text-[var(--accent)]">●</span>}
           </div>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => void saveProject()}
-              disabled={!isProjectDirty}
-              className="rounded-[8px] border border-[var(--border-strong)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-dim)] transition hover:bg-white/5 hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-dim)]"
-            >
-              Save
-            </button>
+            <IconButton onClick={() => void saveProject()} label="Save project" disabled={!isProjectDirty}>
+              <SaveIcon className="h-4 w-4" />
+            </IconButton>
             <IconButton onClick={() => void createProject()} label="Create project">
               <NewFolderIcon className="h-4 w-4" />
             </IconButton>
@@ -1193,9 +1180,7 @@ function GraphChatApp() {
                 onChange={(event) => setProjectDialog((current) => current ? { ...current, value: event.target.value } : current)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
-                    if (projectDialog.mode === 'create') {
-                      void submitCreateProject(projectDialog.value)
-                    } else if (projectDialog.projectId) {
+                    if (projectDialog.projectId) {
                       void submitRenameProject(projectDialog.projectId, projectDialog.value)
                     }
                   }
@@ -1207,9 +1192,7 @@ function GraphChatApp() {
                 <button
                   className="rounded-[12px] bg-[var(--accent)] px-4 py-2 text-sm text-white hover:bg-[var(--accent-hover)]"
                   onClick={() => {
-                    if (projectDialog.mode === 'create') {
-                      void submitCreateProject(projectDialog.value)
-                    } else if (projectDialog.projectId) {
+                    if (projectDialog.projectId) {
                       void submitRenameProject(projectDialog.projectId, projectDialog.value)
                     }
                   }}
@@ -1740,10 +1723,10 @@ function GeneralInspector({
             role="switch"
             aria-checked={isMiniMapVisible}
             onClick={onToggleMiniMap}
-            className={`relative h-[22px] w-[38px] rounded-full transition ${isMiniMapVisible ? 'bg-[rgba(124,90,247,0.24)]' : 'bg-[rgba(28,31,43,0.88)]'}`}
+            className={`relative h-[16px] w-[28px] rounded-full transition ${isMiniMapVisible ? 'bg-[var(--accent-hover)]' : 'bg-[rgba(255,255,255,0.1)]'}`}
           >
             <span
-              className={`absolute top-[3px] h-[16px] w-[16px] rounded-full bg-[var(--text)] transition ${isMiniMapVisible ? 'left-[19px]' : 'left-[3px]'}`}
+              className={`absolute top-[2px] h-[12px] w-[12px] rounded-full transition ${isMiniMapVisible ? 'left-[14px] bg-white' : 'left-[2px] bg-[rgba(255,255,255,0.35)]'}`}
             />
           </button>
         </div>
@@ -1754,10 +1737,10 @@ function GeneralInspector({
             role="switch"
             aria-checked={isSnapToGridEnabled}
             onClick={onToggleSnapToGrid}
-            className={`relative h-[22px] w-[38px] rounded-full transition ${isSnapToGridEnabled ? 'bg-[rgba(124,90,247,0.24)]' : 'bg-[rgba(28,31,43,0.88)]'}`}
+            className={`relative h-[16px] w-[28px] rounded-full transition ${isSnapToGridEnabled ? 'bg-[var(--accent-hover)]' : 'bg-[rgba(255,255,255,0.1)]'}`}
           >
             <span
-              className={`absolute top-[3px] h-[16px] w-[16px] rounded-full bg-[var(--text)] transition ${isSnapToGridEnabled ? 'left-[19px]' : 'left-[3px]'}`}
+              className={`absolute top-[2px] h-[12px] w-[12px] rounded-full transition ${isSnapToGridEnabled ? 'left-[14px] bg-white' : 'left-[2px] bg-[rgba(255,255,255,0.35)]'}`}
             />
           </button>
         </div>
@@ -1843,7 +1826,7 @@ function IconButton({ onClick, label, children, active = false, disabled = false
       type="button"
       aria-label={label}
       title={label}
-      className={`flex h-[30px] w-[30px] items-center justify-center rounded-[10px] text-[var(--text-faint)] transition hover:bg-white/5 hover:text-[var(--text-dim)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-faint)] ${active ? 'text-[var(--accent)]' : ''}`}
+      className={`flex h-[30px] w-[30px] items-center justify-center rounded-[10px] transition hover:bg-white/5 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent ${active ? 'text-[var(--accent)] hover:text-[var(--accent-hover)]' : 'text-[var(--text-faint)] hover:text-[var(--text-dim)]'}`}
       onClick={onClick}
       disabled={disabled}
     >
@@ -2006,6 +1989,16 @@ function CalendarIcon({ className }: { className?: string }) {
       <path d="M16 2v4" />
       <path d="M8 2v4" />
       <path d="M3 10h18" />
+    </svg>
+  )
+}
+
+function SaveIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
     </svg>
   )
 }
