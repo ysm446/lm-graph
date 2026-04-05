@@ -28,6 +28,7 @@ type AppNodeData = {
   graphNode: GraphNodeRecord
   isSelected: boolean
   isEditing: boolean
+  isGenerating: boolean
   onSelect: (id: string) => void
   onChange: (node: GraphNodeRecord) => void
   onStartEdit: (id: string) => void
@@ -105,6 +106,7 @@ function GraphChatApp() {
   const [error, setError] = useState<string | null>(null)
   const [reader, setReader] = useState<ReaderState | null>(null)
   const [generation, setGeneration] = useState<{ generationId: string; nodeId: string } | null>(null)
+  const [generationQueue, setGenerationQueue] = useState<string[]>([])
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState>(null)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState>(null)
   const [isModelModalOpen, setIsModelModalOpen] = useState(false)
@@ -128,12 +130,14 @@ function GraphChatApp() {
   const snapshotRef = useRef<ProjectSnapshot | null>(null)
   const activeProjectIdRef = useRef(activeProjectId)
   const generationRef = useRef(generation)
+  const generationQueueRef = useRef(generationQueue)
   const copiedSelectionRef = useRef<CopiedSelection | null>(null)
   const hasLoadedPreferencesRef = useRef(false)
   const resizeStateRef = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null)
 
   activeProjectIdRef.current = activeProjectId
   generationRef.current = generation
+  generationQueueRef.current = generationQueue
 
   useEffect(() => {
     void window.graphChat.bootstrap().then(({ projects, snapshot, settings, uiPreferences }) => {
@@ -174,6 +178,10 @@ function GraphChatApp() {
   }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, leftSidebarWidth, rightInspectorWidth, generalSections])
 
   useEffect(() => {
+    setNodes((current) => current.map((node) => ({ ...node, data: { ...node.data, isGenerating: generation?.nodeId === node.id } })))
+  }, [generation])
+
+  useEffect(() => {
     setEdges((current) => current.map((edge) => ({ ...edge, type: edgeType })))
   }, [edgeType])
 
@@ -184,11 +192,25 @@ function GraphChatApp() {
     const offDone = window.graphChat.onGenerationDone(({ snapshot, projects }) => {
       setProjects(projects)
       applySnapshot(snapshot)
+      generationRef.current = null
       setGeneration(null)
-      setStatus('Generation completed')
+      const next = generationQueueRef.current[0]
+      if (next) {
+        setGenerationQueue((current) => current.slice(1))
+        void handleGenerate(next)
+        setStatus('Generation completed — starting next...')
+      } else {
+        setStatus('Generation completed')
+      }
     })
     const offError = window.graphChat.onGenerationError(({ message }) => {
+      generationRef.current = null
       setGeneration(null)
+      const next = generationQueueRef.current[0]
+      if (next) {
+        setGenerationQueue((current) => current.slice(1))
+        void handleGenerate(next)
+      }
       setError(message)
       setStatus('Generation failed')
     })
@@ -243,7 +265,8 @@ function GraphChatApp() {
         data: {
           ...node.data,
           isSelected: selectedNodeIds.includes(node.id),
-          isEditing: node.id === editingNodeId
+          isEditing: node.id === editingNodeId,
+          isGenerating: generationRef.current?.nodeId === node.id
         }
       }))
     )
@@ -313,6 +336,7 @@ function GraphChatApp() {
         graphNode: node,
         isSelected: selectedNodeIds.includes(node.id),
         isEditing: node.id === editingNodeId,
+        isGenerating: generationRef.current?.nodeId === node.id,
         onSelect: selectNode,
         onChange: (updated) => {
           mutateLocalNode(updated)
@@ -530,7 +554,11 @@ function GraphChatApp() {
 
 
   async function handleGenerate(nodeId: string) {
-    if (generationRef.current || !activeProjectIdRef.current || !snapshotRef.current) return
+    if (!activeProjectIdRef.current || !snapshotRef.current) return
+    if (generationRef.current) {
+      setGenerationQueue((current) => current.includes(nodeId) ? current : [...current, nodeId])
+      return
+    }
     setError(null)
     setEditingNodeId(null)
     setStatus('Starting generation...')
@@ -554,8 +582,9 @@ function GraphChatApp() {
   async function stopGeneration() {
     if (!generation) return
     await window.graphChat.stopGeneration(generation.generationId)
-    setStatus('Generation stopped')
+    setGenerationQueue([])
     setGeneration(null)
+    setStatus('Generation stopped')
   }
 
   function openReader(nodeId: string) {
@@ -912,7 +941,7 @@ function GraphChatApp() {
 
   function mutateLocalNode(updated: GraphNodeRecord) {
     snapshotRef.current = snapshotRef.current ? { ...snapshotRef.current, nodes: snapshotRef.current.nodes.map((node) => node.id === updated.id ? updated : node) } : snapshotRef.current
-    setNodes((current) => current.map((node) => node.id === updated.id ? { ...node, position: updated.position, style: { width: updated.size.width, height: updated.size.height }, data: { ...node.data, graphNode: updated, isSelected: selectedNodeIds.includes(updated.id), isEditing: updated.id === editingNodeId } } : node))
+    setNodes((current) => current.map((node) => node.id === updated.id ? { ...node, position: updated.position, style: { width: updated.size.width, height: updated.size.height }, data: { ...node.data, graphNode: updated, isSelected: selectedNodeIds.includes(updated.id), isEditing: updated.id === editingNodeId, isGenerating: generationRef.current?.nodeId === updated.id } } : node))
   }
 
   function openCanvasMenu(event: React.MouseEvent) {
@@ -981,9 +1010,16 @@ function GraphChatApp() {
               isGenerating={generation !== null}
             />
             {generation && (
-              <IconButton onClick={() => void stopGeneration()} label="Stop generation">
-                <StopIcon className="h-3.5 w-3.5" />
-              </IconButton>
+              <div className="flex items-center gap-1">
+                <IconButton onClick={() => void stopGeneration()} label="Stop generation">
+                  <StopIcon className="h-3.5 w-3.5" />
+                </IconButton>
+                {generationQueue.length > 0 && (
+                  <span className="rounded-full bg-[var(--accent-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--accent)]">
+                    +{generationQueue.length}
+                  </span>
+                )}
+              </div>
             )}
             {settings && isModelLoaded && (
               <IconButton
@@ -1352,7 +1388,8 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   }
 
   return (
-    <div className={`relative h-full w-full rounded-3xl border-2 px-9 py-6 shadow-lg shadow-black/30 transition ${colors[node.type]} ${data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
+    <div className={`relative h-full w-full rounded-3xl border-2 px-9 py-6 shadow-lg shadow-black/30 transition ${colors[node.type]} ${!data.isGenerating && data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
+      {data.isGenerating && <div className="node-generating-border pointer-events-none absolute inset-0 rounded-3xl" />}
       {externalTitleOpacity > 0 && (
         <div
           className="pointer-events-none absolute left-0 whitespace-nowrap font-serif font-semibold text-[var(--text)]"

@@ -186,3 +186,12 @@ textarea {
 .graph-slider-active::-moz-range-thumb {
   background: #7c5af7;
 }
+
+@keyframes node-glow {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(124, 90, 247, 0.3), 0 0 24px 4px rgba(124, 90, 247, 0.15); }
+  50% { box-shadow: 0 0 18px 6px rgba(124, 90, 247, 0.7), 0 0 48px 12px rgba(124, 90, 247, 0.35); }
+}
+
+.node-generating-border {
+  animation: node-glow 1.6s ease-in-out infinite;
+}
