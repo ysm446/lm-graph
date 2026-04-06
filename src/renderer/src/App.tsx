@@ -79,11 +79,12 @@ type ReaderState = {
 
 const DEFAULT_PROOFREAD_SYSTEM_PROMPT = 'You are a proofreader. Return only the corrected text with no explanation, no markdown formatting, and no additional comments. Preserve the original language and style.'
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 288
-const DEFAULT_RIGHT_INSPECTOR_WIDTH = 380
+const DEFAULT_SETTINGS_PANEL_WIDTH = 340
+const DEFAULT_RIGHT_INSPECTOR_WIDTH = 460
 const MIN_LEFT_SIDEBAR_WIDTH = 220
 const MAX_LEFT_SIDEBAR_WIDTH = 520
-const MIN_RIGHT_INSPECTOR_WIDTH = 300
-const MAX_RIGHT_INSPECTOR_WIDTH = 560
+const MIN_RIGHT_INSPECTOR_WIDTH = 380
+const MAX_RIGHT_INSPECTOR_WIDTH = 680
 const GRID_SIZE = 20
 const DEFAULT_TITLE_FONT_SIZE = 18
 const DEFAULT_CONTENT_FONT_SIZE = 14
@@ -209,7 +210,8 @@ function GraphChatApp() {
   const [isModelSwitching, setIsModelSwitching] = useState(false)
   const [isModelLoaded, setIsModelLoaded] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [isInspectorOpen, setIsInspectorOpen] = useState(true)
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(true)
+  const [isPropertiesPanelOpen, setIsPropertiesPanelOpen] = useState(true)
   const [isMiniMapVisible, setIsMiniMapVisible] = useState(true)
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true)
   const [edgeType, setEdgeType] = useState<'default' | 'smoothstep' | 'step'>('default')
@@ -250,14 +252,15 @@ function GraphChatApp() {
       setProjects(projects)
       setSettings(settings)
       setIsSidebarOpen(uiPreferences.isSidebarOpen)
-      setIsInspectorOpen(uiPreferences.isInspectorOpen)
+      setIsSettingsPanelOpen(uiPreferences.isSettingsPanelOpen)
+      setIsPropertiesPanelOpen(uiPreferences.isPropertiesPanelOpen)
       setIsMiniMapVisible(uiPreferences.isMiniMapVisible)
       setIsSnapToGridEnabled(uiPreferences.isSnapToGridEnabled)
       setEdgeType(uiPreferences.edgeType)
       setIsProofreadEnabled(uiPreferences.isProofreadEnabled)
       if (uiPreferences.proofreadSystemPrompt) setProofreadSystemPrompt(uiPreferences.proofreadSystemPrompt)
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
-      setRightInspectorWidth(uiPreferences.rightInspectorWidth)
+      setRightInspectorWidth(Math.max(uiPreferences.rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH))
       setGeneralSections(uiPreferences.generalSections)
       setTextStyleTarget(uiPreferences.textStyleTarget)
       setTextStylePreset(uiPreferences.textStylePreset)
@@ -280,7 +283,9 @@ function GraphChatApp() {
     if (!hasLoadedPreferencesRef.current) return
     const payload: Partial<UiPreferences> = {
       isSidebarOpen,
-      isInspectorOpen,
+      isInspectorOpen: isSettingsPanelOpen || isPropertiesPanelOpen,
+      isSettingsPanelOpen,
+      isPropertiesPanelOpen,
       isMiniMapVisible,
       isSnapToGridEnabled,
       edgeType,
@@ -297,7 +302,7 @@ function GraphChatApp() {
       contentFontSize
     }
     void window.graphChat.savePreferences(payload)
-  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, leftSidebarWidth, rightInspectorWidth, generalSections, textStyleTarget, textStylePreset, titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize])
+  }, [isSidebarOpen, isSettingsPanelOpen, isPropertiesPanelOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, leftSidebarWidth, rightInspectorWidth, generalSections, textStyleTarget, textStylePreset, titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize])
 
   useEffect(() => {
     setNodes((current) => {
@@ -450,30 +455,6 @@ function GraphChatApp() {
 
   function setSelectedEdge(edgeId: string | null) {
     setSelectedEdgeId(edgeId)
-    setEdges((current) => {
-      let changed = false
-      const next = current.map((edge) => {
-        const selected = edge.id === edgeId
-        const style = selected
-          ? selectedEdgeStyleForHandle((edge.targetHandle as TextInputHandle | null) ?? null)
-          : edgeStyleForHandle((edge.targetHandle as TextInputHandle | null) ?? null)
-        const sameStyle =
-          edge.style &&
-          edge.style.stroke === style.stroke &&
-          edge.style.strokeWidth === style.strokeWidth &&
-          edge.style.opacity === style.opacity
-        if (edge.selected === selected && sameStyle) {
-          return edge
-        }
-        changed = true
-        return {
-          ...edge,
-          selected,
-          style
-        }
-      })
-      return changed ? next : current
-    })
   }
 
   function setSelectedNodes(nodeIds: string[]) {
@@ -549,11 +530,8 @@ function GraphChatApp() {
       sourceHandle: edge.sourceHandle ?? 'output',
       targetHandle: edge.targetHandle,
       zIndex: 0,
-      selected: edge.id === selectedEdgeId,
       animated: false,
-      style: edge.id === selectedEdgeId
-        ? selectedEdgeStyleForHandle((edge.targetHandle as TextInputHandle | null) ?? null)
-        : edgeStyleForHandle((edge.targetHandle as TextInputHandle | null) ?? null)
+      style: edgeStyleForHandle((edge.targetHandle as TextInputHandle | null) ?? null)
     })))
     setSelectedNodeIds((current) => current.filter((id) => normalizedSnapshot.nodes.some((node) => node.id === id)))
     setSelectedEdgeId((current) => normalizedSnapshot.edges.some((edge) => edge.id === current) ? current : null)
@@ -1230,13 +1208,15 @@ function GraphChatApp() {
     resizeStateRef.current = {
       side,
       startX: event.clientX,
-      startWidth: side === 'left' ? leftSidebarWidth : rightInspectorWidth
+      startWidth: side === 'left' ? leftSidebarWidth : effectivePropertiesWidth
     }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }
 
   const hasNodes = nodes.length > 0
+  const hasRightPanels = isSettingsPanelOpen || isPropertiesPanelOpen
+  const effectivePropertiesWidth = Math.max(rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH)
   const nodeMenuNode = nodeMenu ? snapshotRef.current?.nodes.find((node) => node.id === nodeMenu.nodeId) ?? null : null
   const filteredModels = settings?.availableModels.filter((model) => model.name.toLowerCase().includes(modelFilter.toLowerCase())) ?? []
 
@@ -1246,12 +1226,15 @@ function GraphChatApp() {
         <div className="relative flex h-full items-center justify-center">
           <div className="absolute left-0 top-1/2 -translate-y-1/2">
             <IconButton onClick={() => setIsSidebarOpen((current) => !current)} label={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'} active={isSidebarOpen}>
-              <SidebarToggleIcon className="h-[18px] w-[18px]" />
+              <NewFolderIcon className="h-[18px] w-[18px]" />
             </IconButton>
           </div>
           <div className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-2">
-            <IconButton onClick={() => setIsInspectorOpen((current) => !current)} label={isInspectorOpen ? 'Hide inspector' : 'Show inspector'} active={isInspectorOpen}>
-              <SidebarToggleIcon className="h-[18px] w-[18px] rotate-180" />
+            <IconButton onClick={() => setIsPropertiesPanelOpen((current) => !current)} label={isPropertiesPanelOpen ? 'Hide details panel' : 'Show details panel'} active={isPropertiesPanelOpen}>
+              <MessageIcon className="h-[17px] w-[17px]" />
+            </IconButton>
+            <IconButton onClick={() => setIsSettingsPanelOpen((current) => !current)} label={isSettingsPanelOpen ? 'Hide settings panel' : 'Show settings panel'} active={isSettingsPanelOpen}>
+              <GearIcon className="h-[17px] w-[17px]" />
             </IconButton>
           </div>
           <div className="flex max-w-full items-center gap-2">
@@ -1595,99 +1578,112 @@ function GraphChatApp() {
         </ReactFlow>
       </main>
 
-      {isInspectorOpen && (
+      {hasRightPanels && (
       <>
       <SidebarResizeHandle onMouseDown={(event) => beginSidebarResize('right', event)} />
-      <section style={{ width: rightInspectorWidth }} className="flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)]">
-        <div className="border-b border-[var(--border)] px-5 py-3">
-          <h2 className="text-[18px] font-semibold">{selectedNode?.title || 'Properties'}</h2>
-          <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? displayNodeTypeLabel(selectedNode.type, selectedNode.isLocal) : (selectedNodeIds.length > 1 ? `${selectedNodeIds.length} nodes selected` : 'General settings')}</p>
-        </div>
-        {selectedNode ? (
-          <NodeEditor
-            node={selectedNode}
-            disabled={generation?.nodeId === selectedNode.id}
-            currentModelName={settings?.selectedModelName ?? null}
-            contextLength={settings?.contextLength ?? null}
-            onOpenReader={() => openReader(selectedNode.id)}
-            onChange={(updated) => {
-              mutateLocalNode(updated)
-              void persistNode(updated)
-            }}
-            onDuplicate={() => void duplicateNode(selectedNode.id)}
-            onClear={() => void clearNode(selectedNode.id)}
-            onDelete={() => void removeSelected()}
-          />
-        ) : (
-          <GeneralInspector
-            settings={settings}
-            isMiniMapVisible={isMiniMapVisible}
-            isSnapToGridEnabled={isSnapToGridEnabled}
-            edgeType={edgeType}
-            isProofreadEnabled={isProofreadEnabled}
-            textStyleTarget={textStyleTarget}
-            textStylePreset={textStylePreset}
-            titleTextStylePreset={titleTextStylePreset}
-            contentTextStylePreset={contentTextStylePreset}
-            titleFontSize={titleFontSize}
-            contentFontSize={contentFontSize}
-            sections={generalSections}
-            onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
-            onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
-            onToggleSnapToGrid={toggleSnapToGrid}
-            onChangeEdgeType={setEdgeType}
-            onToggleProofread={() => setIsProofreadEnabled((current) => !current)}
-            onChangeTextStyleTarget={setTextStyleTarget}
-            onChangeTextStylePreset={(value) => {
-              setTextStylePreset(value)
-              if (textStyleTarget === 'both') {
-                setTitleTextStylePreset(value)
+      <div className="flex shrink-0 border-l border-[var(--border)] bg-[var(--bg-sidebar)]">
+        {isPropertiesPanelOpen && (
+          <section style={{ width: effectivePropertiesWidth }} className="flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
+            <div className="border-b border-[var(--border)] px-5 py-3">
+              <h2 className="text-[18px] font-semibold">{selectedNode?.title || 'Details'}</h2>
+              <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? displayNodeTypeLabel(selectedNode.type, selectedNode.isLocal) : (selectedNodeIds.length > 1 ? `${selectedNodeIds.length} nodes selected` : 'Select a node to review and edit it here')}</p>
+            </div>
+            {selectedNode ? (
+              <NodeEditor
+                node={selectedNode}
+                disabled={generation?.nodeId === selectedNode.id}
+                currentModelName={settings?.selectedModelName ?? null}
+                contextLength={settings?.contextLength ?? null}
+                onOpenReader={() => openReader(selectedNode.id)}
+                onChange={(updated) => {
+                  mutateLocalNode(updated)
+                  void persistNode(updated)
+                }}
+                onDuplicate={() => void duplicateNode(selectedNode.id)}
+                onClear={() => void clearNode(selectedNode.id)}
+                onDelete={() => void removeSelected()}
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[var(--text-dim)]">Select a single node to edit its title, content, and generation details.</div>
+            )}
+            {reader && (
+              <div className="border-t border-[var(--border)] bg-[rgba(28,31,43,0.84)] p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="font-serif text-lg font-semibold">{reader.title}</h3>
+                  <button className="text-sm text-[var(--text-dim)]" onClick={() => setReader(null)}>Close</button>
+                </div>
+                <div className="mb-3 flex gap-2">
+                  <ToolbarButton onClick={copyReader} label="Copy" />
+                  <ToolbarButton onClick={() => void exportReader()} label="Export" />
+                </div>
+                <textarea readOnly value={reader.content} className="h-56 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-3 text-sm text-[var(--text)]" />
+              </div>
+            )}
+          </section>
+        )}
+        {isSettingsPanelOpen && (
+          <section style={{ width: DEFAULT_SETTINGS_PANEL_WIDTH }} className="flex shrink-0 flex-col bg-[var(--bg-sidebar)]">
+            <div className="border-b border-[var(--border)] px-5 py-3">
+              <h2 className="text-[18px] font-semibold">Settings</h2>
+              <p className="mt-1 text-[12px] text-[var(--text-dim)]">App preferences and text display</p>
+            </div>
+            <GeneralInspector
+              settings={settings}
+              isMiniMapVisible={isMiniMapVisible}
+              isSnapToGridEnabled={isSnapToGridEnabled}
+              edgeType={edgeType}
+              isProofreadEnabled={isProofreadEnabled}
+              textStyleTarget={textStyleTarget}
+              textStylePreset={textStylePreset}
+              titleTextStylePreset={titleTextStylePreset}
+              contentTextStylePreset={contentTextStylePreset}
+              titleFontSize={titleFontSize}
+              contentFontSize={contentFontSize}
+              sections={generalSections}
+              onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
+              onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
+              onToggleSnapToGrid={toggleSnapToGrid}
+              onChangeEdgeType={setEdgeType}
+              onToggleProofread={() => setIsProofreadEnabled((current) => !current)}
+              onChangeTextStyleTarget={setTextStyleTarget}
+              onChangeTextStylePreset={(value) => {
+                setTextStylePreset(value)
+                if (textStyleTarget === 'both') {
+                  setTitleTextStylePreset(value)
+                  setContentTextStylePreset(value)
+                  return
+                }
+                if (textStyleTarget === 'title') {
+                  setTitleTextStylePreset(value)
+                  return
+                }
                 setContentTextStylePreset(value)
-                return
-              }
-              if (textStyleTarget === 'title') {
-                setTitleTextStylePreset(value)
-                return
-              }
-              setContentTextStylePreset(value)
-            }}
-            onChangeTextSize={(target, value) => {
-              const resolved = clamp(value, 11, 26)
-              if (target === 'both') {
-                setTitleFontSize(resolved)
+              }}
+              onChangeTextSize={(target, value) => {
+                const resolved = clamp(value, 11, 26)
+                if (target === 'both') {
+                  setTitleFontSize(resolved)
+                  setContentFontSize(resolved)
+                  return
+                }
+                if (target === 'title') {
+                  setTitleFontSize(resolved)
+                  return
+                }
                 setContentFontSize(resolved)
-                return
-              }
-              if (target === 'title') {
-                setTitleFontSize(resolved)
-                return
-              }
-              setContentFontSize(resolved)
-            }}
-            proofreadSystemPrompt={proofreadSystemPrompt}
-            onSaveProofreadSystemPrompt={(value) => {
-              const resolved = value.trim() === '' ? DEFAULT_PROOFREAD_SYSTEM_PROMPT : value
-              setProofreadSystemPrompt(resolved)
-              void window.graphChat.savePreferences({ proofreadSystemPrompt: resolved })
-            }}
-            onChangeContextLength={(value) => void handleContextLengthChange(value)}
-            onChangeTemperature={(value) => void handleTemperatureChange(value)}
-          />
+              }}
+              proofreadSystemPrompt={proofreadSystemPrompt}
+              onSaveProofreadSystemPrompt={(value) => {
+                const resolved = value.trim() === '' ? DEFAULT_PROOFREAD_SYSTEM_PROMPT : value
+                setProofreadSystemPrompt(resolved)
+                void window.graphChat.savePreferences({ proofreadSystemPrompt: resolved })
+              }}
+              onChangeContextLength={(value) => void handleContextLengthChange(value)}
+              onChangeTemperature={(value) => void handleTemperatureChange(value)}
+            />
+          </section>
         )}
-        {reader && (
-          <div className="border-t border-[var(--border)] bg-[rgba(28,31,43,0.84)] p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-serif text-lg font-semibold">{reader.title}</h3>
-              <button className="text-sm text-[var(--text-dim)]" onClick={() => setReader(null)}>Close</button>
-            </div>
-            <div className="mb-3 flex gap-2">
-              <ToolbarButton onClick={copyReader} label="Copy" />
-              <ToolbarButton onClick={() => void exportReader()} label="Export" />
-            </div>
-            <textarea readOnly value={reader.content} className="h-56 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-3 text-sm text-[var(--text)]" />
-          </div>
-        )}
-      </section>
+      </div>
       </>
       )}
       </div>
@@ -2479,9 +2475,7 @@ function SidebarToggleIcon({ className }: { className?: string }) {
 function NewFolderIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-      <path d="M12 11v6" />
-      <path d="M9 14h6" />
+      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l1.8 2H18.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
     </svg>
   )
 }
@@ -2590,6 +2584,15 @@ function EditIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  )
+}
+
+function GearIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.6 1.6 0 0 1 0 2.3 1.6 1.6 0 0 1-2.3 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.6 1.6 0 0 1-1.6 1.6 1.6 1.6 0 0 1-1.6-1.6v-.1a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.6 1.6 0 0 1-2.3 0 1.6 1.6 0 0 1 0-2.3l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H5a1.6 1.6 0 0 1-1.6-1.6A1.6 1.6 0 0 1 5 10.4h.1a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.6 1.6 0 0 1 0-2.3 1.6 1.6 0 0 1 2.3 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.6 1.6 0 0 1 12 3.4 1.6 1.6 0 0 1 13.6 5v.1a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.6 1.6 0 0 1 2.3 0 1.6 1.6 0 0 1 0 2.3l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.1A1.6 1.6 0 0 1 20 12a1.6 1.6 0 0 1-1.6 1.6h-.1a1 1 0 0 0-.9.6Z" />
     </svg>
   )
 }
@@ -2851,16 +2854,6 @@ function edgeStyleForHandle(handle: TextInputHandle | null) {
     return { strokeWidth: 2.6, stroke: '#a267c8', opacity: 0.84 }
   }
   return { strokeWidth: 4, stroke: '#6a728f', opacity: 0.84 }
-}
-
-function selectedEdgeStyleForHandle(handle: TextInputHandle | null) {
-  if (handle === 'context') {
-    return { strokeWidth: 3.5, stroke: '#7b89f0', opacity: 1 }
-  }
-  if (handle === 'instruction') {
-    return { strokeWidth: 3.5, stroke: '#bf79df', opacity: 1 }
-  }
-  return { strokeWidth: 5, stroke: '#8b95b8', opacity: 1 }
 }
 
 export default App

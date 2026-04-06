@@ -81,6 +81,8 @@ export interface UiPreferences {
   temperature: number
   isSidebarOpen: boolean
   isInspectorOpen: boolean
+  isSettingsPanelOpen: boolean
+  isPropertiesPanelOpen: boolean
   isMiniMapVisible: boolean
   isSnapToGridEnabled: boolean
   edgeType: 'default' | 'smoothstep' | 'step'
