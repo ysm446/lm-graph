@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
-    "dev": "electron-vite dev",
+    "dev": "node scripts/electron-vite-dev.cjs",
     "build": "tsc --noEmit && electron-vite build",
     "preview": "electron-vite preview"
   },

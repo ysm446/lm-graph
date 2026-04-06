@@ -6,11 +6,12 @@ import { GraphRepository } from './database'
 import { LlamaServerManager } from './llamaServer'
 import type { GraphEdgeRecord, GraphNodeRecord, NodeType, ProjectSnapshot, TextInputHandle, UiPreferences } from './types'
 
-const repository = new GraphRepository()
-const llamaServer = new LlamaServerManager()
 const generationControllers = new Map<string, AbortController>()
 const proofreadControllers = new Map<string, AbortController>()
-const preferencesPath = join(app.getPath('userData'), 'preferences.json')
+let repository: GraphRepository | null = null
+let llamaServer: LlamaServerManager | null = null
+let preferencesPath = ''
+const APP_USER_DATA_NAME = 'graph-chat'
 const defaultUiPreferences: UiPreferences = {
   contextLength: 32768,
   temperature: 0.8,
@@ -32,6 +33,21 @@ const defaultUiPreferences: UiPreferences = {
 }
 let uiPreferencesCache: UiPreferences = { ...defaultUiPreferences, generalSections: { ...defaultUiPreferences.generalSections } }
 let hasUnsavedChanges = false
+
+function getRepository(): GraphRepository {
+  if (!repository) throw new Error('Repository is not initialized yet.')
+  return repository
+}
+
+function getPreferencesPath(): string {
+  if (!preferencesPath) throw new Error('Preferences path is not initialized yet.')
+  return preferencesPath
+}
+
+function getLlamaServer(): LlamaServerManager {
+  if (!llamaServer) throw new Error('Llama server manager is not initialized yet.')
+  return llamaServer
+}
 
 function createWindow(): void {
   const iconPath = join(app.getAppPath(), 'assets', 'icon.ico')
@@ -76,6 +92,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  app.setPath('userData', join(app.getPath('appData'), APP_USER_DATA_NAME))
+  repository = new GraphRepository()
+  llamaServer = new LlamaServerManager()
+  preferencesPath = join(app.getPath('userData'), 'preferences.json')
   registerIpc()
   createWindow()
   app.on('activate', () => {
@@ -84,11 +104,13 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', async () => {
-  await llamaServer.stop()
+  if (llamaServer) await llamaServer.stop()
   if (process.platform !== 'darwin') app.quit()
 })
 
 function registerIpc(): void {
+  const repository = getRepository()
+  const llamaServer = getLlamaServer()
   ipcMain.handle('bootstrap', async () => {
     uiPreferencesCache = await loadUiPreferences()
     const settings = await llamaServer.updateSettings({ contextLength: uiPreferencesCache.contextLength, temperature: uiPreferencesCache.temperature })
@@ -234,6 +256,7 @@ async function streamGeneration(input: {
   signal: AbortSignal
 }): Promise<void> {
   try {
+    const llamaServer = getLlamaServer()
     await llamaServer.ensureRunning()
     const response = await fetch(`${llamaServer.getSettings().llamaBaseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -431,6 +454,7 @@ Write the final content for this target node.`
 
 async function streamProofread(input: { event: Electron.IpcMainInvokeEvent; proofreadId: string; text: string; systemPrompt: string; signal: AbortSignal }): Promise<void> {
   try {
+    const llamaServer = getLlamaServer()
     await llamaServer.ensureRunning()
     const response = await fetch(`${llamaServer.getSettings().llamaBaseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -547,7 +571,7 @@ function defaultTargetHandleForNodeType(type: NodeType): TextInputHandle | null 
 
 async function loadUiPreferences(): Promise<UiPreferences> {
   try {
-    const raw = await readFile(preferencesPath, 'utf8')
+    const raw = await readFile(getPreferencesPath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<UiPreferences>
     return mergeUiPreferences(parsed)
   } catch {
@@ -557,7 +581,7 @@ async function loadUiPreferences(): Promise<UiPreferences> {
 
 async function saveUiPreferences(input: Partial<UiPreferences>): Promise<UiPreferences> {
   uiPreferencesCache = mergeUiPreferences({ ...uiPreferencesCache, ...input })
-  await writeFile(preferencesPath, JSON.stringify(uiPreferencesCache, null, 2), 'utf8')
+  await writeFile(getPreferencesPath(), JSON.stringify(uiPreferencesCache, null, 2), 'utf8')
   return uiPreferencesCache
 }
 

@@ -19,7 +19,7 @@ export class LlamaServerManager {
   private settings: AppSettings
 
   constructor() {
-    this.rootDir = app.isPackaged ? process.cwd() : app.getAppPath()
+    this.rootDir = resolveAppRoot()
     this.serverPath = join(this.rootDir, 'bin', 'llama-server', 'llama-b8664-bin-win-cuda-13.1-x64', 'llama-server.exe')
     this.modelsDir = join(this.rootDir, 'models')
     this.settings = this.buildSettings(findDefaultModel(this.listModels()))
@@ -257,4 +257,21 @@ function walkFiles(dir: string): string[] {
     }
   }
   return files
+}
+
+
+function resolveAppRoot(): string {
+  const candidates = [
+    process.cwd(),
+    resolve(app.getAppPath(), '..', '..'),
+    app.getAppPath()
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, 'models')) || existsSync(join(candidate, 'bin'))) {
+      return candidate
+    }
+  }
+
+  return process.cwd()
 }
