@@ -218,6 +218,7 @@ function GraphChatApp() {
   const [error, setError] = useState<string | null>(null)
   const [generation, setGeneration] = useState<{ generationId: string; nodeId: string } | null>(null)
   const [generationQueue, setGenerationQueue] = useState<string[]>([])
+  const [liveGenerationContent, setLiveGenerationContent] = useState<{ nodeId: string; content: string } | null>(null)
   const [proofread, setProofread] = useState<{
     proofreadId: string
     nodeId: string
@@ -361,15 +362,12 @@ function GraphChatApp() {
 
   useEffect(() => {
     const offDelta = window.graphChat.onGenerationDelta(({ nodeId, content }) => {
-      snapshotRef.current = snapshotRef.current ? {
-        ...snapshotRef.current,
-        nodes: snapshotRef.current.nodes.map((node) => node.id === nodeId ? { ...node, content } : node)
-      } : snapshotRef.current
-      setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, graphNode: { ...node.data.graphNode, content } } } : node))
+      setLiveGenerationContent({ nodeId, content })
     })
     const offDone = window.graphChat.onGenerationDone(({ snapshot, projects }) => {
       setProjects(projects)
       applySnapshot(snapshot)
+      setLiveGenerationContent(null)
       generationRef.current = null
       setGeneration(null)
       const next = generationQueueRef.current[0]
@@ -382,6 +380,7 @@ function GraphChatApp() {
       }
     })
     const offError = window.graphChat.onGenerationError(({ message }) => {
+      setLiveGenerationContent(null)
       generationRef.current = null
       setGeneration(null)
       const next = generationQueueRef.current[0]
@@ -479,8 +478,12 @@ function GraphChatApp() {
 
   const activeProofreadPrompt = proofreadPreset === 'custom' ? (proofreadSystemPrompt.trim() || DEFAULT_PROOFREAD_SYSTEM_PROMPT) : PROOFREAD_PRESETS[proofreadPreset].prompt
 
-
   const selectedNode = useMemo(() => selectedNodeIds.length === 1 ? snapshotRef.current?.nodes.find((node) => node.id === selectedNodeIds[0]) ?? null : null, [selectedNodeIds, nodes])
+  const selectedNodeForDetails = useMemo(() => {
+    if (!selectedNode) return null
+    if (liveGenerationContent?.nodeId !== selectedNode.id) return selectedNode
+    return { ...selectedNode, content: liveGenerationContent.content }
+  }, [selectedNode, liveGenerationContent])
   const nodeTypes = useMemo(() => ({ graphNode: GraphNodeCard }), [])
   const proOptions = useMemo(() => ({ hideAttribution: true }), [])
   const canvasStyle = useMemo(() => ({ backgroundColor: 'var(--bg-canvas)' }), [])
@@ -765,6 +768,7 @@ function GraphChatApp() {
     }
     setError(null)
     setEditingNodeId(null)
+    setLiveGenerationContent(null)
     setStatus('Starting generation...')
     try {
       const result = await window.graphChat.startGeneration({ projectId: activeProjectIdRef.current, sourceNodeId: nodeId, snapshot: snapshotRef.current })
@@ -797,6 +801,7 @@ function GraphChatApp() {
     if (!generation) return
     await window.graphChat.stopGeneration(generation.generationId)
     setGenerationQueue([])
+    setLiveGenerationContent(null)
     setGeneration(null)
     setStatus('Generation stopped')
   }
@@ -1581,19 +1586,19 @@ function GraphChatApp() {
               <h2 className="text-[18px] font-semibold">Details</h2>
               <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? displayNodeTypeLabel(selectedNode.type, selectedNode.isLocal) : (selectedNodeIds.length > 1 ? `${selectedNodeIds.length} nodes selected` : 'Select a node to review and edit it here')}</p>
             </div>
-            {selectedNode ? (
+            {selectedNodeForDetails ? (
               <NodeEditor
-                node={selectedNode}
-                disabled={generation?.nodeId === selectedNode.id}
+                node={selectedNodeForDetails}
+                disabled={generation?.nodeId === selectedNodeForDetails.id}
                 currentModelName={settings?.selectedModelName ?? null}
                 contextLength={settings?.contextLength ?? null}
-                onGenerate={() => void handleGenerate(selectedNode.id)}
+                onGenerate={() => void handleGenerate(selectedNodeForDetails.id)}
                 onProofreadRequest={handleProofreadRequest}
                 onChange={(updated) => {
                   mutateLocalNode(updated)
                   void persistNode(updated)
                 }}
-                onDuplicate={() => void duplicateNode(selectedNode.id)}
+                onDuplicate={() => void duplicateNode(selectedNodeForDetails.id)}
                 onDelete={() => void removeSelected()}
               />
             ) : (
