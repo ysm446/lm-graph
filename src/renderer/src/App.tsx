@@ -169,6 +169,12 @@ function getTextStyleCssVars(titlePreset: TextStylePreset, contentPreset: TextSt
   } as React.CSSProperties
 }
 
+function getNodePreview(content: string, maxChars = 260): string {
+  const normalized = content.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxChars) return normalized
+  return `${normalized.slice(0, maxChars).trimEnd()}...`
+}
+
 function App() {
   return (
     <ReactFlowProvider>
@@ -331,6 +337,10 @@ function GraphChatApp() {
 
   useEffect(() => {
     const offDelta = window.graphChat.onGenerationDelta(({ nodeId, content }) => {
+      snapshotRef.current = snapshotRef.current ? {
+        ...snapshotRef.current,
+        nodes: snapshotRef.current.nodes.map((node) => node.id === nodeId ? { ...node, content } : node)
+      } : snapshotRef.current
       setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, graphNode: { ...node.data.graphNode, content } } } : node))
     })
     const offDone = window.graphChat.onGenerationDone(({ snapshot, projects }) => {
@@ -1221,7 +1231,7 @@ function GraphChatApp() {
   const filteredModels = settings?.availableModels.filter((model) => model.name.toLowerCase().includes(modelFilter.toLowerCase())) ?? []
 
   return (
-    <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]">
+    <div className="flex h-screen flex-col bg-[var(--bg)] text-[var(--text)]" style={{ ...nodeTextStyleVars } as React.CSSProperties}>
       <header className="relative z-30 h-10 border-b border-[var(--border)] bg-[var(--bg-sidebar)] px-3">
         <div className="relative flex h-full items-center justify-center">
           <div className="absolute left-0 top-1/2 -translate-y-1/2">
@@ -1344,7 +1354,7 @@ function GraphChatApp() {
       </>
       )}
 
-      <main ref={mainRef} className="relative flex-1" style={{ ...nodeTextStyleVars } as React.CSSProperties}>
+      <main ref={mainRef} className="relative flex-1">
         {error && <div className="absolute right-4 top-4 z-20 max-w-md rounded-2xl border border-red-500/40 bg-red-950/70 px-4 py-3 text-sm text-red-200 shadow">{error}</div>}
         {!hasNodes && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-10">
@@ -1585,7 +1595,7 @@ function GraphChatApp() {
         {isPropertiesPanelOpen && (
           <section style={{ width: effectivePropertiesWidth }} className="flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
             <div className="border-b border-[var(--border)] px-5 py-3">
-              <h2 className="text-[18px] font-semibold">{selectedNode?.title || 'Details'}</h2>
+              <h2 className="text-[18px] font-semibold">Details</h2>
               <p className="mt-1 text-[12px] text-[var(--text-dim)]">{selectedNode ? displayNodeTypeLabel(selectedNode.type, selectedNode.isLocal) : (selectedNodeIds.length > 1 ? `${selectedNodeIds.length} nodes selected` : 'Select a node to review and edit it here')}</p>
             </div>
             {selectedNode ? (
@@ -1595,6 +1605,7 @@ function GraphChatApp() {
                 currentModelName={settings?.selectedModelName ?? null}
                 contextLength={settings?.contextLength ?? null}
                 onOpenReader={() => openReader(selectedNode.id)}
+                onGenerate={() => void handleGenerate(selectedNode.id)}
                 onChange={(updated) => {
                   mutateLocalNode(updated)
                   void persistNode(updated)
@@ -1871,7 +1882,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             className={`node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]${data.isSelected ? ' nowheel' : ''}`}
             style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
             onDoubleClick={() => data.onStartEdit(node.id)}
-          >{node.content || 'No content yet.'}</div>
+          >{getNodePreview(node.content) || 'No content yet.'}</div>
         )}
         {node.generationMeta && (
           <div className="mt-3 flex items-center gap-x-2 text-xs text-[var(--text-dim)]">
@@ -1923,6 +1934,7 @@ function NodeEditor({
   currentModelName,
   contextLength,
   onOpenReader,
+  onGenerate,
   onChange,
   onDuplicate,
   onClear,
@@ -1933,6 +1945,7 @@ function NodeEditor({
   currentModelName: string | null
   contextLength: number | null
   onOpenReader: () => void
+  onGenerate: () => void
   onChange: (node: GraphNodeRecord) => void
   onDuplicate: () => void
   onClear: () => void
@@ -1950,40 +1963,101 @@ function NodeEditor({
     contextUsageRatio !== null
       ? Math.max(0, Number((contextUsageRatio * 100).toFixed(1)))
       : null
+  const [isEditingDetails, setIsEditingDetails] = useState(false)
+  const [draftTitle, setDraftTitle] = useState(node.title)
+  const [draftContent, setDraftContent] = useState(node.content)
+  const [draftScope, setDraftScope] = useState(node.isLocal ? 'local' : 'global')
+
+  useEffect(() => {
+    setDraftTitle(node.title)
+    setDraftContent(node.content)
+    setDraftScope(node.isLocal ? 'local' : 'global')
+    setIsEditingDetails(false)
+  }, [node.id, node.title, node.content, node.isLocal])
+
+  function saveDetails() {
+    onChange({
+      ...node,
+      title: draftTitle,
+      content: draftContent,
+      isLocal: draftScope === 'local'
+    })
+    setIsEditingDetails(false)
+  }
+
+  function cancelDetailsEdit() {
+    setDraftTitle(node.title)
+    setDraftContent(node.content)
+    setDraftScope(node.isLocal ? 'local' : 'global')
+    setIsEditingDetails(false)
+  }
 
   return (
     <div className="inspector-scrollbar flex-1 overflow-y-auto p-5">
       <div className="mb-4 flex flex-wrap gap-2">
         <ToolbarButton onClick={onOpenReader} label="Open Reader" />
+        {node.type === 'text' && <ToolbarButton onClick={onGenerate} label="Generate" />}
+        <ToolbarButton onClick={() => setIsEditingDetails((current) => !current)} label={isEditingDetails ? 'Close' : 'Edit'} />
         <ToolbarButton onClick={onClear} label="Clear" />
       </div>
-      <label className="mb-4 block">
-        <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Title</div>
-        <input value={node.title} disabled={disabled} onChange={(event) => onChange({ ...node, title: event.target.value })} className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
-      </label>
-      <label className="mb-4 block">
-        <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
-        <textarea value={node.content} disabled={disabled} onChange={(event) => onChange({ ...node, content: event.target.value })} className="h-72 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
-        {estimatedContentTokens !== null && (
-          <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--text-faint)]">
-            <MessageIcon className="h-3.5 w-3.5" />
-            <span>Estimated tokens: {estimatedContentTokens}</span>
+      {isEditingDetails ? (
+        <>
+          <label className="mb-4 block">
+            <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Title</div>
+            <input value={draftTitle} disabled={disabled} onChange={(event) => setDraftTitle(event.target.value)} className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
+          </label>
+          <label className="mb-4 block">
+            <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
+            <textarea value={draftContent} disabled={disabled} onChange={(event) => setDraftContent(event.target.value)} className="h-80 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm leading-7 outline-none" />
+            {estimatedContentTokens !== null && (
+              <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--text-faint)]">
+                <MessageIcon className="h-3.5 w-3.5" />
+                <span>Estimated tokens: {estimatedContentTokens}</span>
+              </div>
+            )}
+          </label>
+          {(node.type === 'context' || node.type === 'instruction') && (
+            <div className="mb-4">
+              <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Scope</div>
+              <select
+                value={draftScope}
+                disabled={disabled}
+                onChange={(event) => setDraftScope(event.target.value)}
+                className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm text-[var(--text)] outline-none"
+              >
+                <option value="global">Global</option>
+                <option value="local">Local</option>
+              </select>
+            </div>
+          )}
+          <div className="mb-5 flex flex-wrap gap-2">
+            <ToolbarButton onClick={saveDetails} label="Save" />
+            <ToolbarButton onClick={cancelDetailsEdit} label="Cancel" />
           </div>
-        )}
-      </label>
-      {(node.type === 'context' || node.type === 'instruction') && (
-        <div className="mb-4">
-          <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Scope</div>
-          <select
-            value={node.isLocal ? 'local' : 'global'}
-            disabled={disabled}
-            onChange={(event) => onChange({ ...node, isLocal: event.target.value === 'local' })}
-            className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm text-[var(--text)] outline-none"
-          >
-            <option value="global">Global</option>
-            <option value="local">Local</option>
-          </select>
-        </div>
+        </>
+      ) : (
+        <>
+          <div className="mb-5 px-1">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Title</div>
+            <div className="mt-2 text-[var(--text)]" style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}>{node.title || 'Untitled'}</div>
+          </div>
+          <div className="mb-5 px-1">
+            <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Content</div>
+            <div className="max-h-[420px] overflow-y-auto whitespace-pre-wrap text-[var(--text)]" style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}>{node.content || 'No content yet.'}</div>
+            {estimatedContentTokens !== null && (
+              <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-[var(--text-faint)]">
+                <MessageIcon className="h-3.5 w-3.5" />
+                <span>Estimated tokens: {estimatedContentTokens}</span>
+              </div>
+            )}
+          </div>
+          {(node.type === 'context' || node.type === 'instruction') && (
+            <div className="mb-5 px-1">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Scope</div>
+              <div className="mt-2 text-[var(--text)]" style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}>{node.isLocal ? 'Local' : 'Global'}</div>
+            </div>
+          )}
+        </>
       )}
       {node.generationMeta && (
         <div className="mb-4">
