@@ -1577,7 +1577,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           <div className="pointer-events-none absolute -left-6 top-[66%] text-[10px] font-medium uppercase tracking-[0.2em] text-[rgb(221,156,221)]">I</div>
         </>
       )}
-      <Handle id="output" type="source" position={Position.Right} className="!h-5 !w-5 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
+      <Handle id="output" type="source" position={Position.Right} style={{ top: '28%' }} className="!h-5 !w-5 !border-2 !border-[var(--text-faint)] !bg-[var(--text)]" />
       <div className="flex h-full flex-col">
         <div className="mb-4 flex items-start gap-2">
           <div className="flex-1">
