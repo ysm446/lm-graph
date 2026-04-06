@@ -22,7 +22,7 @@ import {
   type OnNodesChange
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, ModelOption, NodeType, ProjectRecord, ProjectSnapshot, TextInputHandle, UiPreferences } from '../../main/types'
+import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, ModelOption, NodeType, ProjectRecord, ProjectSnapshot, TextInputHandle, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
 
 type AppNodeData = {
   graphNode: GraphNodeRecord
@@ -85,6 +85,88 @@ const MAX_LEFT_SIDEBAR_WIDTH = 520
 const MIN_RIGHT_INSPECTOR_WIDTH = 300
 const MAX_RIGHT_INSPECTOR_WIDTH = 560
 const GRID_SIZE = 20
+const DEFAULT_TITLE_FONT_SIZE = 18
+const DEFAULT_CONTENT_FONT_SIZE = 14
+type GeneralSectionKey = 'context' | 'interface' | 'textStyle' | 'editing'
+
+const TEXT_STYLE_PRESETS: Record<TextStylePreset, { label: string; description: string; titleFamily: string; titleWeight: number; titleLetterSpacing: string; contentFamily: string; contentWeight: number; contentLineHeight: number; contentLetterSpacing: string }> = {
+  standard: {
+    label: 'Standard',
+    description: 'Balanced default for general work and notes.',
+    titleFamily: '"Georgia", "Times New Roman", serif',
+    titleWeight: 600,
+    titleLetterSpacing: '0em',
+    contentFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
+    contentWeight: 400,
+    contentLineHeight: 1.65,
+    contentLetterSpacing: '0em'
+  },
+  business: {
+    label: 'Business',
+    description: 'Clean and structured for business writing and planning.',
+    titleFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
+    titleWeight: 700,
+    titleLetterSpacing: '0.01em',
+    contentFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
+    contentWeight: 400,
+    contentLineHeight: 1.58,
+    contentLetterSpacing: '0.005em'
+  },
+  reading: {
+    label: 'Reading',
+    description: 'Relaxed spacing for long reading sessions.',
+    titleFamily: '"Yu Mincho", "Hiragino Mincho ProN", "Times New Roman", serif',
+    titleWeight: 700,
+    titleLetterSpacing: '0.01em',
+    contentFamily: '"Yu Mincho", "Hiragino Mincho ProN", "Times New Roman", serif',
+    contentWeight: 400,
+    contentLineHeight: 1.82,
+    contentLetterSpacing: '0.01em'
+  },
+  dense: {
+    label: 'Dense',
+    description: 'Tighter spacing when information density matters.',
+    titleFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
+    titleWeight: 650,
+    titleLetterSpacing: '0em',
+    contentFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
+    contentWeight: 400,
+    contentLineHeight: 1.45,
+    contentLetterSpacing: '-0.005em'
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function getActiveTextSize(target: TextStyleTarget, titleFontSize: number, contentFontSize: number): number {
+  if (target === 'title') return titleFontSize
+  if (target === 'content') return contentFontSize
+  return Math.round((titleFontSize + contentFontSize) / 2)
+}
+
+function getActiveTextPreset(target: TextStyleTarget, titleTextStylePreset: TextStylePreset, contentTextStylePreset: TextStylePreset): TextStylePreset {
+  if (target === 'title') return titleTextStylePreset
+  if (target === 'content') return contentTextStylePreset
+  return titleTextStylePreset === contentTextStylePreset ? titleTextStylePreset : 'standard'
+}
+
+function getTextStyleCssVars(titlePreset: TextStylePreset, contentPreset: TextStylePreset, titleFontSize: number, contentFontSize: number): React.CSSProperties {
+  const titleConfig = TEXT_STYLE_PRESETS[titlePreset]
+  const contentConfig = TEXT_STYLE_PRESETS[contentPreset]
+  return {
+    '--node-title-font-family': titleConfig.titleFamily,
+    '--node-title-font-size': `${titleFontSize}px`,
+    '--node-title-font-weight': String(titleConfig.titleWeight),
+    '--node-title-letter-spacing': titleConfig.titleLetterSpacing,
+    '--node-content-font-family': contentConfig.contentFamily,
+    '--node-content-font-size': `${contentFontSize}px`,
+    '--node-content-font-weight': String(contentConfig.contentWeight),
+    '--node-content-line-height': String(contentConfig.contentLineHeight),
+    '--node-content-letter-spacing': contentConfig.contentLetterSpacing
+  } as React.CSSProperties
+}
 
 function App() {
   return (
@@ -135,8 +217,13 @@ function GraphChatApp() {
   const [proofreadSystemPrompt, setProofreadSystemPrompt] = useState(DEFAULT_PROOFREAD_SYSTEM_PROMPT)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(DEFAULT_LEFT_SIDEBAR_WIDTH)
   const [rightInspectorWidth, setRightInspectorWidth] = useState(DEFAULT_RIGHT_INSPECTOR_WIDTH)
-  const [generalSections, setGeneralSections] = useState({ context: true, interface: true, editing: true })
-  const [nodeFontSize, setNodeFontSize] = useState(14)
+  const [generalSections, setGeneralSections] = useState<{ context: boolean; interface: boolean; textStyle: boolean; editing: boolean }>({ context: true, interface: true, textStyle: true, editing: true })
+  const [textStyleTarget, setTextStyleTarget] = useState<TextStyleTarget>('both')
+  const [textStylePreset, setTextStylePreset] = useState<TextStylePreset>('standard')
+  const [titleTextStylePreset, setTitleTextStylePreset] = useState<TextStylePreset>('standard')
+  const [contentTextStylePreset, setContentTextStylePreset] = useState<TextStylePreset>('standard')
+  const [titleFontSize, setTitleFontSize] = useState(DEFAULT_TITLE_FONT_SIZE)
+  const [contentFontSize, setContentFontSize] = useState(DEFAULT_CONTENT_FONT_SIZE)
   const [modelFilter, setModelFilter] = useState('')
   const [projectDialog, setProjectDialog] = useState<ProjectDialogState>(null)
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null)
@@ -145,6 +232,7 @@ function GraphChatApp() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<AppNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const snapshotRef = useRef<ProjectSnapshot | null>(null)
+  const nodeTextStyleVars = useMemo(() => getTextStyleCssVars(titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize), [titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize])
   const activeProjectIdRef = useRef(activeProjectId)
   const generationRef = useRef(generation)
   const generationQueueRef = useRef(generationQueue)
@@ -171,7 +259,12 @@ function GraphChatApp() {
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
       setRightInspectorWidth(uiPreferences.rightInspectorWidth)
       setGeneralSections(uiPreferences.generalSections)
-      if (uiPreferences.nodeFontSize) setNodeFontSize(uiPreferences.nodeFontSize)
+      setTextStyleTarget(uiPreferences.textStyleTarget)
+      setTextStylePreset(uiPreferences.textStylePreset)
+      setTitleTextStylePreset(uiPreferences.titleTextStylePreset)
+      setContentTextStylePreset(uiPreferences.contentTextStylePreset)
+      setTitleFontSize(uiPreferences.titleFontSize)
+      setContentFontSize(uiPreferences.contentFontSize)
       setActiveProjectId(snapshot.project.id)
       applySnapshot(snapshot)
       setIsProjectDirty(false)
@@ -195,10 +288,16 @@ function GraphChatApp() {
       leftSidebarWidth,
       rightInspectorWidth,
       generalSections,
-      nodeFontSize
+      nodeFontSize: contentFontSize,
+      textStyleTarget,
+      textStylePreset,
+      titleTextStylePreset,
+      contentTextStylePreset,
+      titleFontSize,
+      contentFontSize
     }
     void window.graphChat.savePreferences(payload)
-  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, leftSidebarWidth, rightInspectorWidth, generalSections, nodeFontSize])
+  }, [isSidebarOpen, isInspectorOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, leftSidebarWidth, rightInspectorWidth, generalSections, textStyleTarget, textStylePreset, titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize])
 
   useEffect(() => {
     setNodes((current) => {
@@ -1262,7 +1361,7 @@ function GraphChatApp() {
       </>
       )}
 
-      <main ref={mainRef} className="relative flex-1" style={{ '--node-font-size': `${nodeFontSize}px` } as React.CSSProperties}>
+      <main ref={mainRef} className="relative flex-1" style={{ ...nodeTextStyleVars } as React.CSSProperties}>
         {error && <div className="absolute right-4 top-4 z-20 max-w-md rounded-2xl border border-red-500/40 bg-red-950/70 px-4 py-3 text-sm text-red-200 shadow">{error}</div>}
         {!hasNodes && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-10">
@@ -1526,14 +1625,45 @@ function GraphChatApp() {
             isSnapToGridEnabled={isSnapToGridEnabled}
             edgeType={edgeType}
             isProofreadEnabled={isProofreadEnabled}
-            nodeFontSize={nodeFontSize}
+            textStyleTarget={textStyleTarget}
+            textStylePreset={textStylePreset}
+            titleTextStylePreset={titleTextStylePreset}
+            contentTextStylePreset={contentTextStylePreset}
+            titleFontSize={titleFontSize}
+            contentFontSize={contentFontSize}
             sections={generalSections}
             onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
             onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
             onToggleSnapToGrid={toggleSnapToGrid}
             onChangeEdgeType={setEdgeType}
             onToggleProofread={() => setIsProofreadEnabled((current) => !current)}
-            onChangeNodeFontSize={setNodeFontSize}
+            onChangeTextStyleTarget={setTextStyleTarget}
+            onChangeTextStylePreset={(value) => {
+              setTextStylePreset(value)
+              if (textStyleTarget === 'both') {
+                setTitleTextStylePreset(value)
+                setContentTextStylePreset(value)
+                return
+              }
+              if (textStyleTarget === 'title') {
+                setTitleTextStylePreset(value)
+                return
+              }
+              setContentTextStylePreset(value)
+            }}
+            onChangeTextSize={(target, value) => {
+              const resolved = clamp(value, 11, 26)
+              if (target === 'both') {
+                setTitleFontSize(resolved)
+                setContentFontSize(resolved)
+                return
+              }
+              if (target === 'title') {
+                setTitleFontSize(resolved)
+                return
+              }
+              setContentFontSize(resolved)
+            }}
             proofreadSystemPrompt={proofreadSystemPrompt}
             onSaveProofreadSystemPrompt={(value) => {
               const resolved = value.trim() === '' ? DEFAULT_PROOFREAD_SYSTEM_PROMPT : value
@@ -1610,12 +1740,15 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
       {data.isGenerating && <div className="node-generating-border pointer-events-none absolute inset-0 rounded-3xl" />}
       {externalTitleOpacity > 0 && (
         <div
-          className="pointer-events-none absolute left-0 whitespace-nowrap font-serif font-semibold text-[var(--text)]"
+          className="pointer-events-none absolute left-0 whitespace-nowrap text-[var(--text)]"
           style={{
             bottom: `calc(100% + ${6 / zoom}px)`,
             fontSize: `${12 / zoom}px`,
             opacity: externalTitleOpacity,
             lineHeight: 1.2,
+            fontFamily: 'var(--node-title-font-family)',
+            fontWeight: 'var(--node-title-font-weight)',
+            letterSpacing: 'var(--node-title-letter-spacing)',
           }}
         >
           {node.title || 'Untitled'}
@@ -1652,7 +1785,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
         <div className="mb-4 flex items-start gap-2">
           <div className="flex-1">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-dim)]">{displayNodeTypeLabel(node.type, node.isLocal)}</div>
-            {!data.isEditing && <div className="font-serif text-lg font-semibold">{node.title || 'Untitled'}</div>}
+            {!data.isEditing && <div className="text-lg text-[var(--text)]" style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}>{node.title || 'Untitled'}</div>}
           </div>
           <button
             className={`nodrag nopan ml-auto rounded-[10px] border px-3 py-1.5 text-sm font-medium transition ${
@@ -1705,7 +1838,8 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               onBlur={commitDraft}
               onMouseDown={(event) => event.stopPropagation()}
               placeholder="Untitled"
-              className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[15px] font-semibold text-[var(--text)] outline-none"
+              className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
+              style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}
             />
             <textarea
             ref={textareaRef}
@@ -1732,14 +1866,14 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             }}
             onMouseDown={(event) => event.stopPropagation()}
             placeholder="No content yet."
-            className="node-scrollbar nodrag nopan nowheel flex-1 resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 leading-6 text-[var(--text)] outline-none"
-            style={{ fontSize: 'var(--node-font-size)' }}
+            className="node-scrollbar nodrag nopan nowheel flex-1 resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
+            style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
             />
           </div>
         ) : (
           <div
-            className={`node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 leading-6 text-[var(--text)]${data.isSelected ? ' nowheel' : ''}`}
-            style={{ fontSize: 'var(--node-font-size)' }}
+            className={`node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]${data.isSelected ? ' nowheel' : ''}`}
+            style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
             onDoubleClick={() => data.onStartEdit(node.id)}
           >{node.content || 'No content yet.'}</div>
         )}
@@ -1896,7 +2030,12 @@ function GeneralInspector({
   isSnapToGridEnabled,
   edgeType,
   isProofreadEnabled,
-  nodeFontSize,
+  textStyleTarget,
+  textStylePreset,
+  titleTextStylePreset,
+  contentTextStylePreset,
+  titleFontSize,
+  contentFontSize,
   proofreadSystemPrompt,
   sections,
   onToggleSection,
@@ -1904,7 +2043,9 @@ function GeneralInspector({
   onToggleSnapToGrid,
   onChangeEdgeType,
   onToggleProofread,
-  onChangeNodeFontSize,
+  onChangeTextStyleTarget,
+  onChangeTextStylePreset,
+  onChangeTextSize,
   onSaveProofreadSystemPrompt,
   onChangeContextLength,
   onChangeTemperature
@@ -1914,15 +2055,22 @@ function GeneralInspector({
   isSnapToGridEnabled: boolean
   edgeType: 'default' | 'smoothstep' | 'step'
   isProofreadEnabled: boolean
-  nodeFontSize: number
+  textStyleTarget: TextStyleTarget
+  textStylePreset: TextStylePreset
+  titleTextStylePreset: TextStylePreset
+  contentTextStylePreset: TextStylePreset
+  titleFontSize: number
+  contentFontSize: number
   proofreadSystemPrompt: string
-  sections: { context: boolean; interface: boolean; editing: boolean }
-  onToggleSection: (section: 'context' | 'interface' | 'editing') => void
+  sections: { context: boolean; interface: boolean; textStyle: boolean; editing: boolean }
+  onToggleSection: (section: GeneralSectionKey) => void
   onToggleMiniMap: () => void
   onToggleSnapToGrid: () => void
   onChangeEdgeType: (value: 'default' | 'smoothstep' | 'step') => void
   onToggleProofread: () => void
-  onChangeNodeFontSize: (value: number) => void
+  onChangeTextStyleTarget: (value: TextStyleTarget) => void
+  onChangeTextStylePreset: (value: TextStylePreset) => void
+  onChangeTextSize: (target: TextStyleTarget, value: number) => void
   onSaveProofreadSystemPrompt: (value: string) => void
   onChangeContextLength: (value: number) => void
   onChangeTemperature: (value: number) => void
@@ -1932,6 +2080,11 @@ function GeneralInspector({
   const [pendingTemperature, setPendingTemperature] = useState(settings?.temperature ?? defaultTemperature)
   const [pendingContextLength, setPendingContextLength] = useState(settings?.contextLength ?? defaultContextLength)
   const [draftSystemPrompt, setDraftSystemPrompt] = useState(proofreadSystemPrompt)
+  const activeTextSize = getActiveTextSize(textStyleTarget, titleFontSize, contentFontSize)
+  const activeTextPreset = getActiveTextPreset(textStyleTarget, titleTextStylePreset, contentTextStylePreset)
+  const selectedTextStyle = TEXT_STYLE_PRESETS[activeTextPreset]
+  const isTextSizeMixed = textStyleTarget === 'both' && titleFontSize !== contentFontSize
+  const isTextPresetMixed = textStyleTarget === 'both' && titleTextStylePreset !== contentTextStylePreset
   const isSystemPromptChanged = draftSystemPrompt !== proofreadSystemPrompt
   const isTemperatureChanged = pendingTemperature !== defaultTemperature
   const isContextLengthChanged = pendingContextLength !== defaultContextLength
@@ -2089,29 +2242,63 @@ function GeneralInspector({
             <option value="step">Step</option>
           </select>
         </div>
+      </InspectorSection>
+
+      <InspectorSection
+        title="Text Style"
+        icon={<EditIcon className="h-[15px] w-[15px]" />}
+        open={sections.textStyle}
+        onToggle={() => onToggleSection('textStyle')}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--text-dim)]">Apply To</span>
+          <select
+            value={textStyleTarget}
+            onChange={(event) => onChangeTextStyleTarget(event.target.value as TextStyleTarget)}
+            className="rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-2 py-0.5 text-[12px] text-[var(--text)] outline-none"
+          >
+            <option value="both">Title + Text</option>
+            <option value="title">Title</option>
+            <option value="content">Text</option>
+          </select>
+        </div>
         <div className="mt-3 flex items-center justify-between gap-3">
-          <span className="text-[13px] text-[var(--text-dim)]">Text Size</span>
+          <span className="text-[13px] text-[var(--text-dim)]">Preset</span>
+          <select
+            value={activeTextPreset}
+            onChange={(event) => onChangeTextStylePreset(event.target.value as TextStylePreset)}
+            className="rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-2 py-0.5 text-[12px] text-[var(--text)] outline-none"
+          >
+            {Object.entries(TEXT_STYLE_PRESETS).map(([value, option]) => (
+              <option key={value} value={value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-[var(--text-faint)]">{selectedTextStyle.description}</p>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--text-dim)]">Size</span>
           <div className="flex items-center gap-2">
             <input
               type="range"
               min={11}
-              max={22}
+              max={26}
               step={1}
-              value={nodeFontSize}
-              onChange={(e) => onChangeNodeFontSize(Number(e.target.value))}
-              className={`graph-slider w-28 ${nodeFontSize !== 14 ? 'graph-slider-active' : ''}`}
+              value={activeTextSize}
+              onChange={(event) => onChangeTextSize(textStyleTarget, Number(event.target.value))}
+              className={`graph-slider w-28 ${isTextSizeMixed || titleFontSize !== DEFAULT_TITLE_FONT_SIZE || contentFontSize !== DEFAULT_CONTENT_FONT_SIZE ? 'graph-slider-active' : ''}`}
             />
             <input
               type="number"
               min={11}
-              max={22}
+              max={26}
               step={1}
-              value={nodeFontSize}
-              onChange={(e) => onChangeNodeFontSize(Math.min(22, Math.max(11, Number(e.target.value) || 14)))}
+              value={activeTextSize}
+              onChange={(event) => onChangeTextSize(textStyleTarget, Number(event.target.value) || activeTextSize)}
               className="h-7 w-[52px] rounded-[9px] border border-[var(--border-strong)] bg-[rgba(28,31,43,0.88)] px-2 py-1 text-right text-[12px] text-[var(--text)] outline-none"
             />
           </div>
         </div>
+        <p className="mt-2 text-[11px] leading-5 text-[var(--text-faint)]">{isTextPresetMixed ? 'Title and text currently use different presets. Choosing Both will align them.' : isTextSizeMixed ? 'Title and text currently use different sizes. Choosing Both will align them.' : 'These settings are auto-saved and restored on the next launch.'}</p>
       </InspectorSection>
 
       <InspectorSection
@@ -2512,9 +2699,6 @@ function getMiniMapNodeColor(node: Node<AppNodeData>): string {
   return '#3f4150'
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
-}
 
 function snapPositionToGrid(position: { x: number; y: number }) {
   return {

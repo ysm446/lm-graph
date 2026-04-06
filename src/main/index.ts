@@ -26,9 +26,16 @@ const defaultUiPreferences: UiPreferences = {
   leftSidebarWidth: 288,
   rightInspectorWidth: 380,
   nodeFontSize: 14,
+  textStyleTarget: 'both',
+  textStylePreset: 'standard',
+  titleTextStylePreset: 'standard',
+  contentTextStylePreset: 'standard',
+  titleFontSize: 18,
+  contentFontSize: 14,
   generalSections: {
     context: true,
     interface: true,
+    textStyle: true,
     editing: true
   }
 }
@@ -609,10 +616,17 @@ function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
     proofreadSystemPrompt: input.proofreadSystemPrompt ?? defaultUiPreferences.proofreadSystemPrompt,
     leftSidebarWidth: input.leftSidebarWidth ?? defaultUiPreferences.leftSidebarWidth,
     rightInspectorWidth: input.rightInspectorWidth ?? defaultUiPreferences.rightInspectorWidth,
-    nodeFontSize: input.nodeFontSize ?? defaultUiPreferences.nodeFontSize,
+    nodeFontSize: input.nodeFontSize ?? input.contentFontSize ?? defaultUiPreferences.nodeFontSize,
+    textStyleTarget: input.textStyleTarget ?? defaultUiPreferences.textStyleTarget,
+    textStylePreset: input.textStylePreset ?? defaultUiPreferences.textStylePreset,
+    titleTextStylePreset: input.titleTextStylePreset ?? input.textStylePreset ?? defaultUiPreferences.titleTextStylePreset,
+    contentTextStylePreset: input.contentTextStylePreset ?? input.textStylePreset ?? defaultUiPreferences.contentTextStylePreset,
+    titleFontSize: input.titleFontSize ?? input.nodeFontSize ?? defaultUiPreferences.titleFontSize,
+    contentFontSize: input.contentFontSize ?? input.nodeFontSize ?? defaultUiPreferences.contentFontSize,
     generalSections: {
       context: input.generalSections?.context ?? defaultUiPreferences.generalSections.context,
       interface: input.generalSections?.interface ?? defaultUiPreferences.generalSections.interface,
+      textStyle: input.generalSections?.textStyle ?? defaultUiPreferences.generalSections.textStyle,
       editing: input.generalSections?.editing ?? defaultUiPreferences.generalSections.editing
     }
   }

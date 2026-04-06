@@ -1,6 +1,8 @@
 export type NodeType = 'text' | 'context' | 'instruction'
 export type TextInputHandle = 'text' | 'context' | 'instruction'
 export type NodeOutputHandle = 'output'
+export type TextStyleTarget = 'both' | 'title' | 'content'
+export type TextStylePreset = 'standard' | 'business' | 'reading' | 'dense'
 
 export interface ProjectRecord {
   id: string
@@ -87,9 +89,16 @@ export interface UiPreferences {
   leftSidebarWidth: number
   rightInspectorWidth: number
   nodeFontSize: number
+  textStyleTarget: TextStyleTarget
+  textStylePreset: TextStylePreset
+  titleTextStylePreset: TextStylePreset
+  contentTextStylePreset: TextStylePreset
+  titleFontSize: number
+  contentFontSize: number
   generalSections: {
     context: boolean
     interface: boolean
+    textStyle: boolean
     editing: boolean
   }
 }
