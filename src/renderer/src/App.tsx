@@ -197,6 +197,10 @@ function getNodePreview(content: string, maxChars = 260): string {
   return `${normalized.slice(0, maxChars).trimEnd()}...`
 }
 
+type SelectionProofreadAction = {
+  payload: ProofreadRequestPayload
+}
+
 function App() {
   return (
     <ReactFlowProvider>
@@ -1701,11 +1705,11 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const node = data.graphNode
   const [draftTitle, setDraftTitle] = useState(node.title)
   const [draftContent, setDraftContent] = useState(node.content)
+  const [selectionProofreadAction, setSelectionProofreadAction] = useState<SelectionProofreadAction | null>(null)
   const [isComposing, setIsComposing] = useState(false)
   const wasEditingRef = useRef(data.isEditing)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const proofreadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { zoom } = useViewport()
   const FADE_START = 0.65
   const FADE_END = 0.5
@@ -1729,6 +1733,12 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
       titleInputRef.current?.select()
     }
     wasEditingRef.current = data.isEditing
+  }, [data.isEditing])
+
+  useEffect(() => {
+    if (!data.isEditing) {
+      setSelectionProofreadAction(null)
+    }
   }, [data.isEditing])
 
   function commitDraft() {
@@ -1808,7 +1818,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               }
             }}
           >
-            {data.isEditing ? 'Done' : 'Edit'}
+            {data.isEditing ? 'Close' : 'Edit'}
           </button>
           {node.type === 'text' && (
             <button
@@ -1843,34 +1853,68 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
               style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}
             />
-            <textarea
-            ref={textareaRef}
-            value={draftContent}
-            onChange={(event) => setDraftContent(event.target.value)}
-            onCompositionStart={() => setIsComposing(true)}
-            onCompositionEnd={(event) => {
-              setIsComposing(false)
-              setDraftContent(event.currentTarget.value)
-            }}
-            onBlur={() => {
-              setIsComposing(false)
-              commitDraft()
-            }}
-            onSelect={(event) => {
-              const el = event.currentTarget
-              const selected = el.value.slice(el.selectionStart, el.selectionEnd).trim()
-              if (proofreadTimerRef.current) clearTimeout(proofreadTimerRef.current)
-              if (!selected) return
-              proofreadTimerRef.current = setTimeout(() => {
-                const rect = el.getBoundingClientRect()
-                data.onProofreadRequest({ nodeId: node.id, text: selected, selectionStart: el.selectionStart, selectionEnd: el.selectionEnd, fullContent: el.value, rect })
-              }, 600)
-            }}
-            onMouseDown={(event) => event.stopPropagation()}
-            placeholder="No content yet."
-            className="node-scrollbar nodrag nopan nowheel flex-1 resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
-            style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
-            />
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={draftContent}
+                onChange={(event) => {
+                  setDraftContent(event.target.value)
+                  setSelectionProofreadAction(null)
+                }}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={(event) => {
+                  setIsComposing(false)
+                  setDraftContent(event.currentTarget.value)
+                }}
+                onBlur={() => {
+                  setIsComposing(false)
+                  commitDraft()
+                }}
+                onSelect={(event) => {
+                  const el = event.currentTarget
+                  const selectionStart = el.selectionStart ?? 0
+                  const selectionEnd = el.selectionEnd ?? 0
+                  const selected = el.value.slice(selectionStart, selectionEnd).trim()
+                  if (!selected) {
+                    setSelectionProofreadAction(null)
+                    return
+                  }
+                  const rect = el.getBoundingClientRect()
+                  setSelectionProofreadAction({
+                    payload: {
+                      nodeId: node.id,
+                      text: selected,
+                      selectionStart,
+                      selectionEnd,
+                      fullContent: el.value,
+                      rect
+                    }
+                  })
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+                placeholder="No content yet."
+                className="node-scrollbar nodrag nopan nowheel flex-1 resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
+                style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
+              />
+              {selectionProofreadAction && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 nodrag nopan rounded-full border border-[var(--accent-border)] bg-[var(--accent)] px-3 py-1 text-[12px] font-medium text-white shadow-lg transition hover:bg-[var(--accent-hover)]"
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setSelectionProofreadAction(null)
+                    data.onProofreadRequest(selectionProofreadAction.payload)
+                  }}
+                >
+                  校正
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div
@@ -1912,7 +1956,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 data.onStartEdit(node.id)
               }
             }}>
-              {data.isEditing ? 'Done' : 'Edit'}
+              {data.isEditing ? 'Close' : 'Edit'}
             </button>
           </div>
           <span>{Math.round(node.size.width)} x {Math.round(node.size.height)}</span>
@@ -1961,7 +2005,7 @@ function NodeEditor({
   const [draftScope, setDraftScope] = useState(node.isLocal ? 'local' : 'global')
   const contentScrollRef = useRef<HTMLDivElement | null>(null)
   const detailTextareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const proofreadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [selectionProofreadAction, setSelectionProofreadAction] = useState<SelectionProofreadAction | null>(null)
   const [showTopFade, setShowTopFade] = useState(false)
   const [showBottomFade, setShowBottomFade] = useState(false)
 
@@ -1969,6 +2013,7 @@ function NodeEditor({
     setDraftTitle(node.title)
     setDraftContent(node.content)
     setDraftScope(node.isLocal ? 'local' : 'global')
+    setSelectionProofreadAction(null)
     setIsEditingDetails(false)
   }, [node.id, node.title, node.content, node.isLocal])
 
@@ -1985,12 +2030,6 @@ function NodeEditor({
     return () => window.cancelAnimationFrame(frame)
   }, [isEditingDetails, node.id, node.content])
 
-  useEffect(() => {
-    return () => {
-      if (proofreadTimerRef.current) clearTimeout(proofreadTimerRef.current)
-    }
-  }, [])
-
   function saveDetails() {
     onChange({
       ...node,
@@ -2005,6 +2044,7 @@ function NodeEditor({
     setDraftTitle(node.title)
     setDraftContent(node.content)
     setDraftScope(node.isLocal ? 'local' : 'global')
+    setSelectionProofreadAction(null)
     setIsEditingDetails(false)
   }
 
@@ -2026,11 +2066,13 @@ function NodeEditor({
     const selectionStart = element.selectionStart ?? 0
     const selectionEnd = element.selectionEnd ?? 0
     const selectedText = element.value.slice(selectionStart, selectionEnd).trim()
-    if (proofreadTimerRef.current) clearTimeout(proofreadTimerRef.current)
-    if (!selectedText || disabled) return
-    proofreadTimerRef.current = setTimeout(() => {
-      const rect = element.getBoundingClientRect()
-      onProofreadRequest({
+    if (!selectedText || disabled) {
+      setSelectionProofreadAction(null)
+      return
+    }
+    const rect = element.getBoundingClientRect()
+    setSelectionProofreadAction({
+      payload: {
         nodeId: node.id,
         text: selectedText,
         selectionStart,
@@ -2048,8 +2090,8 @@ function NodeEditor({
             textarea.selectionEnd = selectionStart + (nextContent.length - (element.value.length - (selectionEnd - selectionStart)))
           })
         }
-      })
-    }, 600)
+      }
+    })
   }
 
   return (
@@ -2057,18 +2099,42 @@ function NodeEditor({
       {isEditingDetails ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <label className="mb-4 block">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="text-sm font-medium text-[var(--text-dim)]">Title</div>
-              <div className="flex flex-wrap items-center gap-2">
-                {node.type === 'text' && <ToolbarButton onClick={onGenerate} label="Generate" variant="accent" />}
-                <ToolbarButton onClick={() => setIsEditingDetails(false)} label="Done" />
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-sm font-medium text-[var(--text-dim)]">Title</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {node.type === 'text' && <ToolbarButton onClick={onGenerate} label="Generate" variant="accent" />}
+                </div>
               </div>
-            </div>
             <input value={draftTitle} disabled={disabled} onChange={(event) => setDraftTitle(event.target.value)} className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
           </label>
           <label className="mb-4 flex min-h-0 flex-1 flex-col">
             <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
-            <textarea ref={detailTextareaRef} value={draftContent} disabled={disabled} onChange={(event) => setDraftContent(event.target.value)} onSelect={handleDetailSelection} className="inspector-scrollbar min-h-[16rem] flex-1 rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm leading-7 outline-none" />
+            <div className="relative flex min-h-[16rem] flex-1">
+              <textarea
+                ref={detailTextareaRef}
+                value={draftContent}
+                disabled={disabled}
+                onChange={(event) => {
+                  setDraftContent(event.target.value)
+                  setSelectionProofreadAction(null)
+                }}
+                onSelect={handleDetailSelection}
+                className="inspector-scrollbar min-h-[16rem] flex-1 rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm leading-7 outline-none"
+              />
+              {selectionProofreadAction && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 rounded-full border border-[var(--accent-border)] bg-[var(--accent)] px-3 py-1 text-[12px] font-medium text-white shadow-lg transition hover:bg-[var(--accent-hover)]"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setSelectionProofreadAction(null)
+                    onProofreadRequest(selectionProofreadAction.payload)
+                  }}
+                >
+                  校正
+                </button>
+              )}
+            </div>
             {estimatedContentTokens !== null && (
               <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--text-faint)]">
                 <MessageIcon className="h-3.5 w-3.5" />
@@ -2091,7 +2157,7 @@ function NodeEditor({
             </div>
           )}
           <div className="mb-5 flex flex-wrap gap-2">
-            <ToolbarButton onClick={saveDetails} label="Save" />
+            <ToolbarButton onClick={saveDetails} label="Save" variant="accent" />
             <ToolbarButton onClick={cancelDetailsEdit} label="Cancel" />
           </div>
         </div>
@@ -2467,7 +2533,7 @@ function GeneralInspector({
         onToggle={() => onToggleSection('editing')}
       >
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[13px] text-[var(--text-dim)]">Proofread on Select</span>
+          <span className="text-[13px] text-[var(--text-dim)]">Proofread from Selection</span>
           <button
             type="button"
             role="switch"
