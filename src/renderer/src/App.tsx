@@ -2190,7 +2190,7 @@ function NodeEditor({
               </select>
             </div>
           )}
-          <div className="mb-5 flex flex-wrap gap-2">
+          <div className="mb-5 flex flex-wrap justify-end gap-2">
             <ToolbarButton onClick={saveDetails} label="Save" variant="accent" />
             <ToolbarButton onClick={cancelDetailsEdit} label="Cancel" />
           </div>
