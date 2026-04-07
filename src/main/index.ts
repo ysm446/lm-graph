@@ -34,11 +34,13 @@ const defaultUiPreferences: UiPreferences = {
   contentTextStylePreset: 'standard',
   titleFontSize: 18,
   contentFontSize: 14,
+  isPromptLogEnabled: false,
   generalSections: {
     context: true,
     interface: true,
     textStyle: true,
-    editing: true
+    editing: true,
+    debug: true
   },
   lastUsedModelPath: null,
   projectViewports: {}
@@ -280,6 +282,16 @@ async function streamGeneration(input: {
   try {
     const llamaServer = getLlamaServer()
     await llamaServer.ensureRunning()
+    const userMessage = input.userContext + '\n\n---\nWrite the target text based on the context above.'
+    if (uiPreferencesCache.isPromptLogEnabled) {
+      input.event.sender.send('debug:promptLog', {
+        generationId: input.generationId,
+        nodeId: input.targetNode.id,
+        nodeTitle: input.targetNode.title || '(untitled)',
+        systemPrompt: input.systemPrompt,
+        userMessage
+      })
+    }
     const response = await fetch(`${llamaServer.getSettings().llamaBaseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -290,7 +302,7 @@ async function streamGeneration(input: {
         temperature: llamaServer.getSettings().temperature,
         messages: [
           { role: 'system', content: input.systemPrompt },
-          { role: 'user', content: input.userContext + '\\n\\n---\\nWrite the target text based on the context above.' }
+          { role: 'user', content: userMessage }
         ]
       }),
       signal: input.signal
@@ -630,11 +642,13 @@ function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
     contentTextStylePreset: input.contentTextStylePreset ?? input.textStylePreset ?? defaultUiPreferences.contentTextStylePreset,
     titleFontSize: input.titleFontSize ?? input.nodeFontSize ?? defaultUiPreferences.titleFontSize,
     contentFontSize: input.contentFontSize ?? input.nodeFontSize ?? defaultUiPreferences.contentFontSize,
+    isPromptLogEnabled: input.isPromptLogEnabled ?? defaultUiPreferences.isPromptLogEnabled,
     generalSections: {
       context: input.generalSections?.context ?? defaultUiPreferences.generalSections.context,
       interface: input.generalSections?.interface ?? defaultUiPreferences.generalSections.interface,
       textStyle: input.generalSections?.textStyle ?? defaultUiPreferences.generalSections.textStyle,
-      editing: input.generalSections?.editing ?? defaultUiPreferences.generalSections.editing
+      editing: input.generalSections?.editing ?? defaultUiPreferences.generalSections.editing,
+      debug: input.generalSections?.debug ?? defaultUiPreferences.generalSections.debug
     },
     lastUsedModelPath: input.lastUsedModelPath ?? defaultUiPreferences.lastUsedModelPath,
     projectViewports: input.projectViewports ?? defaultUiPreferences.projectViewports

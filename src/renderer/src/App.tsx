@@ -110,7 +110,7 @@ const MAX_RIGHT_INSPECTOR_WIDTH = 840
 const GRID_SIZE = 20
 const DEFAULT_TITLE_FONT_SIZE = 18
 const DEFAULT_CONTENT_FONT_SIZE = 14
-type GeneralSectionKey = 'context' | 'interface' | 'textStyle' | 'editing'
+type GeneralSectionKey = 'context' | 'interface' | 'textStyle' | 'editing' | 'debug'
 
 const TEXT_STYLE_PRESETS: Record<TextStylePreset, { label: string; description: string; titleFamily: string; titleWeight: number; titleLetterSpacing: string; contentFamily: string; contentWeight: number; contentLineHeight: number; contentLetterSpacing: string }> = {
   standard: {
@@ -253,7 +253,10 @@ function GraphChatApp() {
   const [proofreadSystemPrompt, setProofreadSystemPrompt] = useState(DEFAULT_PROOFREAD_SYSTEM_PROMPT)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(DEFAULT_LEFT_SIDEBAR_WIDTH)
   const [rightInspectorWidth, setRightInspectorWidth] = useState(DEFAULT_RIGHT_INSPECTOR_WIDTH)
-  const [generalSections, setGeneralSections] = useState<{ context: boolean; interface: boolean; textStyle: boolean; editing: boolean }>({ context: true, interface: true, textStyle: true, editing: true })
+  const [generalSections, setGeneralSections] = useState<{ context: boolean; interface: boolean; textStyle: boolean; editing: boolean; debug: boolean }>({ context: true, interface: true, textStyle: true, editing: true, debug: true })
+  const [isPromptLogEnabled, setIsPromptLogEnabled] = useState(false)
+  const [promptLogs, setPromptLogs] = useState<Array<{ generationId: string; nodeTitle: string; systemPrompt: string; userMessage: string; timestamp: string }>>([])
+  const MAX_PROMPT_LOGS = 20
   const [textStyleTarget, setTextStyleTarget] = useState<TextStyleTarget>('both')
   const [textStylePreset, setTextStylePreset] = useState<TextStylePreset>('standard')
   const [titleTextStylePreset, setTitleTextStylePreset] = useState<TextStylePreset>('standard')
@@ -299,7 +302,8 @@ function GraphChatApp() {
       if (uiPreferences.proofreadSystemPrompt) setProofreadSystemPrompt(uiPreferences.proofreadSystemPrompt)
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
       setRightInspectorWidth(Math.max(uiPreferences.rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH))
-      setGeneralSections(uiPreferences.generalSections)
+      setGeneralSections({ ...uiPreferences.generalSections, debug: uiPreferences.generalSections.debug ?? true })
+      setIsPromptLogEnabled(uiPreferences.isPromptLogEnabled ?? false)
       setTextStyleTarget(uiPreferences.textStyleTarget)
       setTextStylePreset(uiPreferences.textStylePreset)
       setTitleTextStylePreset(uiPreferences.titleTextStylePreset)
@@ -340,6 +344,7 @@ function GraphChatApp() {
       leftSidebarWidth,
       rightInspectorWidth,
       generalSections,
+      isPromptLogEnabled,
       nodeFontSize: contentFontSize,
       textStyleTarget,
       textStylePreset,
@@ -349,7 +354,7 @@ function GraphChatApp() {
       contentFontSize
     }
     void window.graphChat.savePreferences(payload)
-  }, [isSidebarOpen, isSettingsPanelOpen, isPropertiesPanelOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, proofreadPreset, leftSidebarWidth, rightInspectorWidth, generalSections, textStyleTarget, textStylePreset, titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize])
+  }, [isSidebarOpen, isSettingsPanelOpen, isPropertiesPanelOpen, isMiniMapVisible, isSnapToGridEnabled, edgeType, isProofreadEnabled, proofreadPreset, leftSidebarWidth, rightInspectorWidth, generalSections, isPromptLogEnabled, textStyleTarget, textStylePreset, titleTextStylePreset, contentTextStylePreset, titleFontSize, contentFontSize])
 
   useEffect(() => {
     setNodes((current) => {
@@ -428,6 +433,12 @@ function GraphChatApp() {
     const offProofreadError = window.graphChat.onProofreadError(({ proofreadId }) => {
       setProofread((current) => current?.proofreadId === proofreadId ? null : current)
     })
+    const offPromptLog = window.graphChat.onPromptLog(({ generationId, nodeTitle, systemPrompt, userMessage }) => {
+      setPromptLogs((current) => {
+        const entry = { generationId, nodeTitle, systemPrompt, userMessage, timestamp: new Date().toLocaleTimeString('ja-JP') }
+        return [entry, ...current].slice(0, MAX_PROMPT_LOGS)
+      })
+    })
     return () => {
       offDelta()
       offDone()
@@ -435,6 +446,7 @@ function GraphChatApp() {
       offProofreadDelta()
       offProofreadDone()
       offProofreadError()
+      offPromptLog()
     }
   }, [])
 
@@ -1739,6 +1751,10 @@ function GraphChatApp() {
               }}
               onChangeContextLength={(value) => void handleContextLengthChange(value)}
               onChangeTemperature={(value) => void handleTemperatureChange(value)}
+              isPromptLogEnabled={isPromptLogEnabled}
+              onTogglePromptLog={() => setIsPromptLogEnabled((current) => !current)}
+              promptLogs={promptLogs}
+              onClearPromptLogs={() => setPromptLogs([])}
             />
           </section>
         )}
@@ -2320,7 +2336,11 @@ function GeneralInspector({
   onChangeTextSize,
   onSaveProofreadSystemPrompt,
   onChangeContextLength,
-  onChangeTemperature
+  onChangeTemperature,
+  isPromptLogEnabled,
+  onTogglePromptLog,
+  promptLogs,
+  onClearPromptLogs
 }: {
   settings: AppSettings | null
   isMiniMapVisible: boolean
@@ -2335,7 +2355,7 @@ function GeneralInspector({
   titleFontSize: number
   contentFontSize: number
   proofreadSystemPrompt: string
-  sections: { context: boolean; interface: boolean; textStyle: boolean; editing: boolean }
+  sections: { context: boolean; interface: boolean; textStyle: boolean; editing: boolean; debug: boolean }
   onToggleSection: (section: GeneralSectionKey) => void
   onToggleMiniMap: () => void
   onToggleSnapToGrid: () => void
@@ -2348,6 +2368,10 @@ function GeneralInspector({
   onSaveProofreadSystemPrompt: (value: string) => void
   onChangeContextLength: (value: number) => void
   onChangeTemperature: (value: number) => void
+  isPromptLogEnabled: boolean
+  onTogglePromptLog: () => void
+  promptLogs: Array<{ generationId: string; nodeTitle: string; systemPrompt: string; userMessage: string; timestamp: string }>
+  onClearPromptLogs: () => void
 }) {
   const defaultContextLength = 32768
   const defaultTemperature = 0.8
@@ -2630,6 +2654,55 @@ function GeneralInspector({
           </div>
         )}
       </InspectorSection>
+
+      <InspectorSection
+        title="Debug"
+        icon={<span className="text-[11px] font-mono font-bold leading-none">{'{ }'}</span>}
+        open={sections.debug}
+        onToggle={() => onToggleSection('debug')}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--text-dim)]">プロンプトログ出力</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPromptLogEnabled}
+            onClick={onTogglePromptLog}
+            className={`relative h-[16px] w-[28px] rounded-full transition ${isPromptLogEnabled ? 'bg-[var(--accent-hover)]' : 'bg-[rgba(255,255,255,0.1)]'}`}
+          >
+            <span className={`absolute top-[2px] h-[12px] w-[12px] rounded-full transition ${isPromptLogEnabled ? 'left-[14px] bg-white' : 'left-[2px] bg-[rgba(255,255,255,0.35)]'}`} />
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] leading-5 text-[var(--text-faint)]">llama-server への送信内容をログに表示します。</p>
+        {promptLogs.length > 0 && (
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[11px] text-[var(--text-faint)]">{promptLogs.length} 件のログ</span>
+              <button
+                type="button"
+                onClick={onClearPromptLogs}
+                className="text-[11px] text-[var(--text-faint)] transition hover:text-[var(--text-dim)]"
+              >
+                クリア
+              </button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {promptLogs.map((log) => (
+                <div key={log.generationId} className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-input)] p-2.5 text-[11px]">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="font-medium text-[var(--text-dim)] truncate">{log.nodeTitle}</span>
+                    <span className="shrink-0 text-[var(--text-faint)]">{log.timestamp}</span>
+                  </div>
+                  <div className="mb-1 text-[var(--text-faint)]">System:</div>
+                  <pre className="mb-2 whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.6] text-[var(--text-dim)]">{log.systemPrompt}</pre>
+                  <div className="mb-1 text-[var(--text-faint)]">User:</div>
+                  <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.6] text-[var(--text-dim)]">{log.userMessage}</pre>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </InspectorSection>
     </div>
   )
 }
@@ -2648,7 +2721,7 @@ function InspectorSection({
   children: ReactNode
 }) {
   return (
-    <div className="mb-4">
+    <div className="border-b border-[var(--border)] pb-4 mb-4 last:border-b-0 last:pb-0">
       <button type="button" onClick={onToggle} className="flex w-full items-center justify-between px-0 py-1.5 text-left">
         <span className="flex items-center gap-2 text-[13px] font-medium text-[var(--text)]">
           <span className="text-[var(--text-dim)]">{icon}</span>

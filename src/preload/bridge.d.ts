@@ -56,6 +56,7 @@ export interface GraphChatApi {
   onProofreadDelta(callback: (payload: { proofreadId: string; content: string }) => void): () => void
   onProofreadDone(callback: (payload: { proofreadId: string; content: string }) => void): () => void
   onProofreadError(callback: (payload: { proofreadId: string; message: string }) => void): () => void
+  onPromptLog(callback: (payload: { generationId: string; nodeId: string; nodeTitle: string; systemPrompt: string; userMessage: string }) => void): () => void
 }
 
 declare global {

@@ -99,11 +99,13 @@ export interface UiPreferences {
   contentTextStylePreset: TextStylePreset
   titleFontSize: number
   contentFontSize: number
+  isPromptLogEnabled: boolean
   generalSections: {
     context: boolean
     interface: boolean
     textStyle: boolean
     editing: boolean
+    debug: boolean
   }
   lastUsedModelPath: string | null
   projectViewports: Record<string, { x: number; y: number; zoom: number }>
