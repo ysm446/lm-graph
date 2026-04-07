@@ -1751,6 +1751,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const FADE_START = 0.65
   const FADE_END = 0.5
   const externalTitleOpacity = zoom >= FADE_START ? 0 : zoom <= FADE_END ? 1 : (FADE_START - zoom) / (FADE_START - FADE_END)
+  const borderStyle = node.type === 'text' || !node.isLocal ? 'border-solid' : 'border-dashed'
   const colors = {
     text: 'border-[#6b7280] bg-[var(--bg-card)]',
     context: 'border-[rgb(90,100,210)] bg-[var(--bg-card)]',
@@ -1785,7 +1786,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   }
 
   return (
-    <div className={`relative h-full w-full rounded-3xl border-2 px-9 py-6 shadow-lg shadow-black/30 transition ${colors[node.type]} ${!data.isGenerating && data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
+    <div className={`relative h-full w-full rounded-3xl border-2 px-9 py-6 shadow-lg shadow-black/30 transition ${borderStyle} ${colors[node.type]} ${!data.isGenerating && data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
       {data.isGenerating && <div className="node-generating-border pointer-events-none absolute inset-0 rounded-3xl" />}
       {externalTitleOpacity > 0 && (
         <div
