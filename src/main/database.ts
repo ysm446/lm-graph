@@ -357,6 +357,14 @@ export class GraphRepository {
     })
   }
 
+  duplicateImageAsset(id: string, duplicatedNodeId: string): ImageAsset | null {
+    const current = this.getNode(id)
+    if (current.type !== 'image' || !current.image) {
+      return null
+    }
+    return this.cloneImageAsset(current.image, duplicatedNodeId)
+  }
+
   updateNode(input: UpdateNodeInput): GraphNodeRecord {
     const now = new Date().toISOString()
     const current = this.getNode(input.id)

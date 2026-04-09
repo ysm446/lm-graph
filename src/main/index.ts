@@ -223,6 +223,9 @@ function registerIpc(): void {
     const node = repository.replaceImageNode(nodeId, result.filePaths[0])
     return { canceled: false as const, node, snapshot: repository.getProjectSnapshot(node.projectId), projects: repository.listProjects() }
   })
+  ipcMain.handle('node:duplicateImageAsset', async (_event, nodeId: string, duplicatedNodeId: string) => {
+    return repository.duplicateImageAsset(nodeId, duplicatedNodeId)
+  })
   ipcMain.handle('node:delete', async (_event, id: string) => {
     const node = repository.getNode(id)
     repository.deleteNode(id)

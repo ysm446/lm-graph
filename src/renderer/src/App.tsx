@@ -36,6 +36,7 @@ type AppNodeData = {
   onStopEdit: () => void
   onGenerate: (id: string) => void
   onPickImage: (id: string) => void
+  onOpenImagePreview: (node: GraphNodeRecord) => void
   onProofreadRequest: (payload: ProofreadRequestPayload) => void
   onResize: (id: string, input: { position: { x: number; y: number }; size: { width: number; height: number } }) => void
 }
@@ -254,6 +255,7 @@ function GraphChatApp() {
     position: { top: number; left: number }
     onApply?: (nextContent: string) => void
   } | null>(null)
+  const [imagePreview, setImagePreview] = useState<{ src: string; title: string; meta: string | null } | null>(null)
   const proofreadRef = useRef(proofread)
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState>(null)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState>(null)
@@ -412,6 +414,15 @@ function GraphChatApp() {
       }))
     )
   }, [selectedEdgeId])
+
+  useEffect(() => {
+    if (!imagePreview) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImagePreview(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [imagePreview])
 
   useEffect(() => {
     const offDelta = window.graphChat.onGenerationDelta(({ nodeId, content }) => {
@@ -619,6 +630,7 @@ function GraphChatApp() {
         onStopEdit: () => setEditingNodeId(null),
         onGenerate: handleGenerate,
         onPickImage: (id) => { void replaceImageForNode(id) },
+        onOpenImagePreview: openImagePreview,
         onProofreadRequest: handleProofreadRequest,
         onResize: handleResize
       }
@@ -783,7 +795,28 @@ function GraphChatApp() {
     setStatus('Image node created')
   }
 
+  function openImagePreview(node: GraphNodeRecord) {
+    const imageUrl = getImageAssetUrl(node.image?.path ?? null) ?? getImagePreviewUrl(node)
+    if (!imageUrl) return
+    setImagePreview({
+      src: imageUrl,
+      title: node.title || node.image?.originalName || 'Image',
+      meta: [node.image?.originalName, formatImageDimensions(node.image?.width, node.image?.height)].filter(Boolean).join(' / ') || null
+    })
+  }
+
   async function replaceImageForNode(nodeId: string) {
+    const snapshot = snapshotRef.current
+    if (!snapshot) return
+
+    const existsInPersistedSnapshot = persistedSnapshotRef.current?.nodes.some((node) => node.id === nodeId) ?? false
+    if (!existsInPersistedSnapshot) {
+      const syncResult = await window.graphChat.saveProjectSnapshot(snapshot)
+      setProjects(syncResult.projects)
+      applySnapshot(syncResult.snapshot)
+      setIsProjectDirty(true)
+    }
+
     const result = await window.graphChat.replaceImageNode(nodeId)
     if (result.canceled || !result.node || !result.snapshot || !result.projects) return
     setProjects(result.projects)
@@ -1049,9 +1082,12 @@ function GraphChatApp() {
       : (options?.offset ?? { x: 60, y: 60 })
     const now = new Date().toISOString()
     const duplicatedIds = new Map<string, string>()
-    const duplicatedNodes = selection.nodes.map((node) => {
+    const duplicatedNodes = await Promise.all(selection.nodes.map(async (node) => {
       const nextId = crypto.randomUUID()
       duplicatedIds.set(node.id, nextId)
+      const duplicatedImage = node.type === 'image' && node.image
+        ? await window.graphChat.duplicateImageAsset(node.id, nextId)
+        : node.image
       return {
         ...node,
         id: nextId,
@@ -1059,11 +1095,12 @@ function GraphChatApp() {
         content: options?.clearTextContent && node.type === 'text' ? '' : node.content,
         isGenerated: false,
         generationMeta: null,
+        image: duplicatedImage,
         createdAt: now,
         updatedAt: now,
         position: normalizePosition({ x: node.position.x + offset.x, y: node.position.y + offset.y }, isSnapToGridEnabled)
       }
-    })
+    }))
     const duplicatedEdges = selection.edges.map((edge) => ({
       ...edge,
       id: crypto.randomUUID(),
@@ -1659,6 +1696,22 @@ function GraphChatApp() {
             )}
           </div>
         )}
+        {imagePreview && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/72 p-6 backdrop-blur-sm" onClick={() => setImagePreview(null)}>
+            <div className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-[20px] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.96)] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between gap-4 border-b border-[var(--border)] px-5 py-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-[var(--text)]">{imagePreview.title}</div>
+                  {imagePreview.meta && <div className="mt-1 truncate text-xs text-[var(--text-dim)]">{imagePreview.meta}</div>}
+                </div>
+                <button type="button" className="rounded-[10px] border border-[var(--border-strong)] px-3 py-1.5 text-sm text-[var(--text-dim)] transition hover:bg-white/5 hover:text-[var(--text)]" onClick={() => setImagePreview(null)}>Close</button>
+              </div>
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
+                <img src={imagePreview.src} alt={imagePreview.title} className="max-h-[78vh] w-auto max-w-full rounded-[10px] object-contain" draggable={false} />
+              </div>
+            </div>
+          </div>
+        )}
         {projectDialog && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => setProjectDialog(null)}>
             <div className="w-full max-w-md rounded-[20px] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -2096,6 +2149,10 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
+                if (node.image && imagePreviewUrl) {
+                  data.onOpenImagePreview(node)
+                  return
+                }
                 data.onPickImage(node.id)
               }}
             >

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('graphChat', {
   createImageNode: (input) => ipcRenderer.invoke('node:createImage', input),
   replaceImageNode: (nodeId: string) => ipcRenderer.invoke('node:replaceImage', nodeId),
   updateNode: (input) => ipcRenderer.invoke('node:update', input),
+  duplicateImageAsset: (nodeId: string, duplicatedNodeId: string) => ipcRenderer.invoke('node:duplicateImageAsset', nodeId, duplicatedNodeId),
   deleteNode: (id: string) => ipcRenderer.invoke('node:delete', id),
   createEdge: (projectId: string, sourceId: string, targetId: string, sourceHandle, targetHandle) => ipcRenderer.invoke('edge:create', projectId, sourceId, targetId, sourceHandle, targetHandle),
   deleteEdge: (id: string, projectId: string) => ipcRenderer.invoke('edge:delete', id, projectId),
