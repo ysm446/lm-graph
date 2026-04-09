@@ -2015,9 +2015,9 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           <Handle id="context" type="target" position={Position.Left} style={{ top: '38%' }} className="!h-5 !w-5 !border-2 !border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]" />
           <Handle id="instruction" type="target" position={Position.Left} style={{ top: '58%' }} className="!h-5 !w-5 !border-2 !border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]" />
           <Handle id="image" type="target" position={Position.Left} style={{ top: '78%' }} className="!h-5 !w-5 !border-2 !border-[#669fe0] !bg-[#669fe0]" />
-          <div className="pointer-events-none absolute -left-6 top-[12%] text-[10px] font-medium uppercase tracking-[0.2em] text-[var(--text-dim)]">T</div>
-          <div className="pointer-events-none absolute -left-6 top-[32%] text-[10px] font-medium uppercase tracking-[0.2em] text-[rgb(162,170,255)]">C</div>
-          <div className="pointer-events-none absolute -left-6 top-[52%] text-[10px] font-medium uppercase tracking-[0.2em] text-[rgb(221,156,221)]">I</div>
+          <div className="pointer-events-none absolute -left-8 top-[12%] text-[10px] font-medium uppercase tracking-[0.2em] text-[var(--text-dim)]">TXT</div>
+          <div className="pointer-events-none absolute -left-8 top-[32%] text-[10px] font-medium uppercase tracking-[0.2em] text-[rgb(162,170,255)]">CTX</div>
+          <div className="pointer-events-none absolute -left-8 top-[52%] text-[10px] font-medium uppercase tracking-[0.2em] text-[rgb(221,156,221)]">INS</div>
           <div className="pointer-events-none absolute -left-8 top-[72%] text-[10px] font-medium uppercase tracking-[0.16em] text-[#8db6e8]">Img</div>
         </>
       )}
