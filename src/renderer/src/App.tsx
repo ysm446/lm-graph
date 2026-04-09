@@ -630,7 +630,7 @@ function GraphChatApp() {
           setEditingNodeId(id)
         },
         onStopEdit: () => setEditingNodeId(null),
-        onGenerate: handleGenerate,
+        onGenerate: (id: string) => handleGenerateRef.current(id),
         onPickImage: (id) => { void replaceImageForNode(id) },
         onOpenImagePreview: openImagePreview,
         onProofreadRequest: handleProofreadRequest,
