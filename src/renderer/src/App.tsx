@@ -2128,7 +2128,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
                 placeholder="No content yet."
-                className="node-scrollbar nodrag nopan nowheel flex-1 resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
+                className="node-scrollbar nodrag nopan nowheel h-full w-full resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
                 style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
               />
               {selectionProofreadAction && (
@@ -2202,14 +2202,14 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               </button>
             </div>
             <div
-              className="node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]"
+              className="node-scrollbar nowheel flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]"
               style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
               onDoubleClick={() => data.onStartEdit(node.id)}
             >{node.content.trim() || 'No notes yet.'}</div>
           </div>
         ) : (
           <div
-            className="node-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]"
+            className="node-scrollbar nowheel flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]"
             style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
             onDoubleClick={() => data.onStartEdit(node.id)}
           >{node.content.trim() || 'No content yet.'}</div>
