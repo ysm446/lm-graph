@@ -5,7 +5,7 @@ cd /d "%~dp0"
 set ELECTRON_RUN_AS_NODE=
 
 if not exist "node_modules" (
-  echo [Graph Chat] Installing npm dependencies...
+  echo [LM Graph] Installing npm dependencies...
   call npm install
   if errorlevel 1 goto :fail
 )
@@ -19,14 +19,14 @@ if /I "%~1"=="--rebuild" (
 )
 
 if defined NEEDS_REBUILD (
-  echo [Graph Chat] Rebuilding native modules for Electron...
+  echo [LM Graph] Rebuilding native modules for Electron...
   call npm run rebuild:electron
   if errorlevel 1 goto :fail
 ) else (
-  echo [Graph Chat] Skipping native rebuild. Use start.bat --rebuild if needed.
+  echo [LM Graph] Skipping native rebuild. Use start.bat --rebuild if needed.
 )
 
-echo [Graph Chat] Starting app...
+echo [LM Graph] Starting app...
 call npm run dev
 if errorlevel 1 goto :fail
 
@@ -34,5 +34,5 @@ goto :eof
 
 :fail
 echo.
-echo [Graph Chat] Startup failed.
+echo [LM Graph] Startup failed.
 exit /b 1

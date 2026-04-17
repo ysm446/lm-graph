@@ -1,6 +1,6 @@
-﻿# Prompt Graph
+# LM Graph
 
-Prompt Graph は、ローカル LLM ワークフローをノードグラフで構築する Windows 向けデスクトップアプリです。
+LM Graph は、ローカル LLM ワークフローをノードグラフで構築する Windows 向けデスクトップアプリです。
 Electron + React + React Flow を使い、プロジェクト保存には SQLite、生成実行にはローカルの `llama.cpp` OpenAI 互換サーバーを使います。
 
 ## 主な機能

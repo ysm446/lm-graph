@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**prompt-graph** is an Electron desktop app for building local LLM workflows using a node graph UI. Users connect nodes on a canvas to compose prompts and generate text via a locally running llama.cpp server.
+**lm-graph** is an Electron desktop app for building local LLM workflows using a node graph UI. Users connect nodes on a canvas to compose prompts and generate text via a locally running llama.cpp server.
 
 ## Architecture
 

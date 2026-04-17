@@ -1,8 +1,8 @@
-# Prompt Graph 仕様
+# LM Graph 仕様
 
 ## 概要
 
-Prompt Graph は、有向グラフとしてローカル LLM ワークフローを構築するためのデスクトップアプリです。
+LM Graph は、有向グラフとしてローカル LLM ワークフローを構築するためのデスクトップアプリです。
 ユーザーはキャンバス上に `text`・`context`・`instruction` ノードを配置して接続し、ローカルの `llama.cpp` OpenAI 互換サーバーに対して生成を実行します。
 
 ## スタック
