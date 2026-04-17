@@ -74,6 +74,14 @@ export interface ModelOption {
   name: string
   path: string
   sizeBytes: number
+  metadata: ModelMetadata
+}
+
+export interface ModelMetadata {
+  quantizationLabel: string | null
+  parameterCount: number | null
+  parameterLabel: string | null
+  source: 'filename' | 'server' | null
 }
 
 export interface AppSettings {

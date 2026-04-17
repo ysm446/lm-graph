@@ -1441,7 +1441,14 @@ function GraphChatApp() {
   const hasRightPanels = isSettingsPanelOpen || isPropertiesPanelOpen
   const effectivePropertiesWidth = Math.max(rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH)
   const nodeMenuNode = nodeMenu ? snapshotRef.current?.nodes.find((node) => node.id === nodeMenu.nodeId) ?? null : null
-  const filteredModels = settings?.availableModels.filter((model) => model.name.toLowerCase().includes(modelFilter.toLowerCase())) ?? []
+  const filteredModels = settings?.availableModels.filter((model) => {
+    const haystack = [
+      model.name,
+      model.metadata.quantizationLabel,
+      model.metadata.parameterLabel
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(modelFilter.toLowerCase())
+  }) ?? []
 
   if (!isBootstrapped) {
     return <div className="flex h-screen bg-[var(--bg)]" />
@@ -1657,9 +1664,18 @@ function GraphChatApp() {
                       disabled={isModelSwitching || generation !== null}
                     >
                       <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0 truncate font-mono text-[13px] font-semibold leading-5">{displayModelName(model.name)}</div>
-                        <div className="flex shrink-0 items-center gap-4 text-[11px] text-[var(--text-faint)]">
-                          <span className="rounded-[7px] bg-white/6 px-2.5 py-0.5 font-semibold text-[var(--text-dim)]">{extractModelParams(model.name) ?? '--'}</span>
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-[13px] font-semibold leading-5">{displayModelName(model.name)}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-faint)]">
+                            {model.metadata.source === 'server' && (
+                              <span className="rounded-[6px] border border-[rgba(124,90,247,0.35)] bg-[rgba(124,90,247,0.12)] px-2 py-0.5 font-semibold text-[var(--accent)]">server</span>
+                            )}
+                            <span>{model.name.split(/[\\/]/).slice(0, -1).join('/') || 'models/'}</span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--text-faint)]">
+                          <span className="rounded-[7px] bg-white/6 px-2.5 py-0.5 font-semibold text-[var(--text-dim)]">{getModelParameterLabel(model) ?? '--'}</span>
+                          <span className="rounded-[7px] bg-white/6 px-2.5 py-0.5 font-semibold text-[var(--text-dim)]">{getModelQuantizationLabel(model) ?? '--'}</span>
                           <span>{formatModelSize(model.sizeBytes)}</span>
                         </div>
                       </div>
@@ -3473,9 +3489,12 @@ function isEditableElement(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
 }
 
-function extractModelParams(modelName: string): string | null {
-  const match = modelName.match(/(\d+(?:\.\d+)?)\s*[Bb](?:[^a-zA-Z]|$)/)
-  return match ? `${match[1]}B` : null
+function getModelParameterLabel(model: ModelOption): string | null {
+  return model.metadata.parameterLabel
+}
+
+function getModelQuantizationLabel(model: ModelOption): string | null {
+  return model.metadata.quantizationLabel
 }
 
 function formatModelSize(sizeBytes: number): string {

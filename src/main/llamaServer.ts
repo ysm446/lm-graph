@@ -4,7 +4,7 @@ import { createServer } from 'node:net'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { app } from 'electron'
-import type { AppSettings, ModelOption } from './types'
+import type { AppSettings, ModelMetadata, ModelOption } from './types'
 
 const DEFAULT_PORT = 8080
 const DEFAULT_CONTEXT_LENGTH = 32768
@@ -15,6 +15,7 @@ export class LlamaServerManager {
   private readonly rootDir: string
   private readonly serverPath: string
   private readonly modelsDir: string
+  private readonly modelMetadataCache = new Map<string, Partial<ModelMetadata>>()
   private port = DEFAULT_PORT
   private settings: AppSettings
 
@@ -49,7 +50,11 @@ export class LlamaServerManager {
       .map((file) => ({
         path: file,
         name: relative(this.modelsDir, file).replace(/\\/g, '/'),
-        sizeBytes: statSync(file).size
+        sizeBytes: statSync(file).size,
+        metadata: mergeModelMetadata(
+          buildFilenameModelMetadata(relative(this.modelsDir, file).replace(/\\/g, '/')),
+          this.modelMetadataCache.get(resolve(file))
+        )
       }))
       .sort((left, right) => left.name.localeCompare(right.name))
 
@@ -96,12 +101,14 @@ export class LlamaServerManager {
   async ensureRunning(): Promise<AppSettings> {
     await this.ensureAvailablePort()
     if (await this.isHealthy()) {
+      await this.refreshSelectedModelMetadata()
       return this.getRuntimeSettings()
     }
     if (!this.process) {
       this.start()
     }
     await this.waitForHealthy()
+    await this.refreshSelectedModelMetadata()
     return this.getRuntimeSettings()
   }
 
@@ -215,6 +222,23 @@ export class LlamaServerManager {
       return false
     }
   }
+
+  private async refreshSelectedModelMetadata(): Promise<void> {
+    const metadata = await fetchModelMetadataFromServer(this.settings.llamaBaseUrl, this.settings.llamaModelAlias)
+    if (!metadata) return
+
+    const cacheKey = resolve(this.settings.selectedModelPath)
+    const currentMetadata = this.modelMetadataCache.get(cacheKey)
+    const nextMetadata = mergeModelMetadata(
+      buildFilenameModelMetadata(this.settings.selectedModelName),
+      { ...currentMetadata, ...metadata }
+    )
+    this.modelMetadataCache.set(cacheKey, nextMetadata)
+
+    const currentModel = this.listModels().find((model) => resolve(model.path) === cacheKey)
+    if (!currentModel) return
+    this.settings = this.buildSettings(currentModel, this.listModels(), this.settings.contextLength, this.settings.temperature)
+  }
 }
 
 async function findAvailablePort(startPort: number, attempts = 20): Promise<number> {
@@ -260,6 +284,103 @@ function findDefaultModel(models: ModelOption[]): ModelOption {
 
 function toModelAlias(modelName: string): string {
   return basename(modelName, '.gguf').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'local-model'
+}
+
+async function fetchModelMetadataFromServer(llamaBaseUrl: string, modelAlias: string): Promise<Partial<ModelMetadata> | null> {
+  try {
+    const response = await fetch(`${llamaBaseUrl}/v1/models`)
+    if (!response.ok) return null
+    const payload = await response.json() as { data?: unknown }
+    const entries = Array.isArray(payload.data) ? payload.data : []
+    const modelEntry = entries.find((entry) => {
+      if (!isRecord(entry)) return false
+      return typeof entry.id === 'string' && entry.id === modelAlias
+    }) ?? entries[0]
+
+    if (!isRecord(modelEntry)) return null
+
+    const meta = isRecord(modelEntry.meta) ? modelEntry.meta : null
+    const parameterCount = meta ? readParameterCount(meta) : null
+    const quantizationLabel = extractQuantizationLabel(
+      typeof modelEntry.id === 'string'
+        ? modelEntry.id
+        : (typeof modelEntry.path === 'string' ? modelEntry.path : '')
+    )
+
+    return {
+      quantizationLabel,
+      parameterCount,
+      parameterLabel: formatParameterCount(parameterCount),
+      source: parameterCount !== null || quantizationLabel ? 'server' : null
+    }
+  } catch {
+    return null
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function readParameterCount(meta: Record<string, unknown>): number | null {
+  const candidates = [
+    meta.n_params,
+    meta.parameter_count,
+    meta.parameters
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate
+    if (typeof candidate === 'string') {
+      const parsed = Number(candidate)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+
+  return null
+}
+
+function buildFilenameModelMetadata(modelName: string): ModelMetadata {
+  const quantizationLabel = extractQuantizationLabel(modelName)
+  const parameterLabel = extractParameterLabelFromName(modelName)
+  return {
+    quantizationLabel,
+    parameterCount: null,
+    parameterLabel,
+    source: quantizationLabel || parameterLabel ? 'filename' : null
+  }
+}
+
+function mergeModelMetadata(base: ModelMetadata, override?: Partial<ModelMetadata>): ModelMetadata {
+  return {
+    quantizationLabel: override?.quantizationLabel ?? base.quantizationLabel,
+    parameterCount: override?.parameterCount ?? base.parameterCount,
+    parameterLabel: override?.parameterLabel ?? base.parameterLabel,
+    source: override?.source ?? base.source
+  }
+}
+
+function extractQuantizationLabel(value: string): string | null {
+  const normalized = basename(value, '.gguf')
+  const match = normalized.match(/(?:^|[-_ ])((?:IQ|Q)\d(?:_[A-Z0-9]+)+)(?:$|[-_ ])/i)
+  if (!match) return null
+  const upper = match[1].toUpperCase()
+  const reordered = upper.replace(/^Q(\d)(.*)$/i, '$1Q$2')
+  return reordered
+}
+
+function extractParameterLabelFromName(modelName: string): string | null {
+  const match = modelName.match(/(\d+(?:\.\d+)?)\s*[Bb](?:[^a-zA-Z]|$)/)
+  return match ? `${match[1]}B` : null
+}
+
+function formatParameterCount(parameterCount: number | null): string | null {
+  if (parameterCount === null || !Number.isFinite(parameterCount) || parameterCount <= 0) return null
+  const valueInBillions = parameterCount / 1_000_000_000
+  const rounded = valueInBillions >= 10
+    ? Math.round(valueInBillions)
+    : Math.round(valueInBillions * 10) / 10
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}B`
 }
 
 function findMmprojForModel(modelPath: string): string | null {
