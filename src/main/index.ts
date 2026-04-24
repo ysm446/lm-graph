@@ -180,6 +180,15 @@ function createWindow(): void {
     }
   })
   window.setMenuBarVisibility(false)
+  window.webContents.on('console-message', (details) => {
+    console.log(`[renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`)
+  })
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
+    console.error(`[renderer:load-failed] ${errorCode} ${errorDescription} ${validatedUrl}`)
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[renderer:gone] ${details.reason} exitCode=${details.exitCode}`)
+  })
 
   let forceClose = false
   window.on('close', (event) => {

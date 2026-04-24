@@ -4,7 +4,6 @@ import {
   Handle,
   MiniMap,
   NodeResizeControl,
-  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -12,9 +11,6 @@ import {
   useNodesState,
   useReactFlow,
   useViewport,
-  getSmoothStepPath,
-  BaseEdge,
-  type EdgeProps,
   type Connection,
   type Edge,
   type Node,
@@ -24,6 +20,41 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
+import {
+  DEFAULT_CONTENT_FONT_SIZE,
+  DEFAULT_LEFT_SIDEBAR_WIDTH,
+  DEFAULT_PROOFREAD_SYSTEM_PROMPT,
+  DEFAULT_RIGHT_INSPECTOR_WIDTH,
+  DEFAULT_SETTINGS_PANEL_WIDTH,
+  DEFAULT_TITLE_FONT_SIZE,
+  GRID_SIZE,
+  MAX_LEFT_SIDEBAR_WIDTH,
+  MAX_RIGHT_INSPECTOR_WIDTH,
+  MIN_LEFT_SIDEBAR_WIDTH,
+  MIN_RIGHT_INSPECTOR_WIDTH,
+  PROOFREAD_PRESETS,
+  TEXT_STYLE_PRESETS,
+  getActiveTextPreset,
+  getActiveTextSize,
+  getTextStyleCssVars,
+  type GeneralSectionKey
+} from './constants'
+import { edgeStyleForHandle, edgeTypes, selectedEdgeStyleForHandle } from './flowEdges'
+import {
+  buildSnapshotFromCanvas,
+  collectDownstreamTextNodes,
+  defaultTargetHandleForNodeType,
+  defaultTitle,
+  displayNodeTypeLabel,
+  getMiniMapNodeColor,
+  normalizeNodeBounds,
+  resolveTargetHandleForEdge,
+  targetHandleLabel,
+  wouldCreateCycle
+} from './graphUtils'
+import { clamp, displayModelName, estimateTokenCount, formatImageDimensions, formatModelSize, getModelParameterLabel, getModelQuantizationLabel, isEditableElement } from './formatters'
+import { getImageAssetUrl, getImagePreviewUrl } from './imageUtils'
+import { SystemResourceMonitor } from './SystemResourceMonitor'
 
 type AppNodeData = {
   graphNode: GraphNodeRecord
@@ -83,132 +114,6 @@ type CopiedSelection = {
 }
 
 type ResizeSide = 'left' | 'right'
-
-const DEFAULT_PROOFREAD_SYSTEM_PROMPT = 'あなたは校正者です。説明は付けず、修正後の文章だけを返してください。Markdown は使わず、余計なコメントも付けないでください。元の言語と文体は維持してください。'
-const PROOFREAD_PRESETS: Record<Exclude<ProofreadPreset, 'custom'>, { label: string; description: string; prompt: string }> = {
-  light: {
-    label: 'Light',
-    description: 'Minimal corrections for typos and awkward phrasing.',
-    prompt: '\u3042\u306a\u305f\u306f\u65e5\u672c\u8a9e\u306e\u6821\u6b63\u8005\u3067\u3059\u3002\u5143\u306e\u610f\u5473\u3068\u6587\u4f53\u3092\u3067\u304d\u308b\u3060\u3051\u4fdd\u3061\u306a\u304c\u3089\u3001\u8aa4\u5b57\u8131\u5b57\u3001\u8868\u8a18\u3086\u308c\u3001\u4e0d\u81ea\u7136\u306a\u8a00\u3044\u56de\u3057\u3060\u3051\u3092\u6700\u5c0f\u9650\u306b\u4fee\u6b63\u3057\u3066\u304f\u3060\u3055\u3044\u3002\u8aac\u660e\u306f\u4ed8\u3051\u305a\u3001\u4fee\u6b63\u5f8c\u306e\u6587\u7ae0\u3060\u3051\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002'
-  },
-  standard: {
-    label: 'Standard',
-    description: 'Natural cleanup while preserving meaning and tone.',
-    prompt: '\u3042\u306a\u305f\u306f\u512a\u79c0\u306a\u65e5\u672c\u8a9e\u30a8\u30c7\u30a3\u30bf\u3067\u3059\u3002\u6587\u7ae0\u306e\u610f\u5473\u3068\u7b46\u8005\u306e\u610f\u56f3\u3092\u4fdd\u3063\u305f\u307e\u307e\u3001\u3088\u308a\u81ea\u7136\u3067\u8aad\u307f\u3084\u3059\u3044\u65e5\u672c\u8a9e\u306b\u6574\u3048\u3066\u304f\u3060\u3055\u3044\u3002\u5fc5\u8981\u306b\u5fdc\u3058\u3066\u8a9e\u9806\u3084\u8868\u73fe\u3092\u8abf\u6574\u3057\u3001\u4e0d\u81ea\u7136\u306a\u8a00\u3044\u56de\u3057\u3001\u5197\u9577\u3055\u3001\u91cd\u8907\u3092\u6539\u5584\u3057\u3066\u304f\u3060\u3055\u3044\u3002\u8aac\u660e\u306f\u4ed8\u3051\u305a\u3001\u4fee\u6b63\u5f8c\u306e\u6587\u7ae0\u3060\u3051\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002Markdown \u306f\u4f7f\u308f\u306a\u3044\u3067\u304f\u3060\u3055\u3044\u3002'
-  },
-  aggressive: {
-    label: 'Aggressive',
-    description: 'More active rewriting for clarity and flow.',
-    prompt: '\u3042\u306a\u305f\u306f\u30d7\u30ed\u306e\u7de8\u96c6\u8005\u3067\u3059\u3002\u5143\u306e\u610f\u56f3\u3092\u4fdd\u3061\u306a\u304c\u3089\u3001\u6587\u7ae0\u3092\u3088\u308a\u660e\u5feb\u3067\u6d17\u7df4\u3055\u308c\u305f\u65e5\u672c\u8a9e\u306b\u66f8\u304d\u76f4\u3057\u3066\u304f\u3060\u3055\u3044\u3002\u5197\u9577\u306a\u8868\u73fe\u306f\u7c21\u6f54\u306b\u3057\u3001\u66d6\u6627\u306a\u7b87\u6240\u306f\u81ea\u7136\u306a\u7bc4\u56f2\u3067\u88dc\u3044\u3001\u5168\u4f53\u306e\u6d41\u308c\u304c\u826f\u304f\u306a\u308b\u3088\u3046\u306b\u6574\u3048\u3066\u304f\u3060\u3055\u3044\u3002\u8aac\u660e\u306f\u4e0d\u8981\u3067\u3059\u3002\u5b8c\u6210\u3057\u305f\u6587\u7ae0\u3060\u3051\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002Markdown \u306f\u4f7f\u308f\u306a\u3044\u3067\u304f\u3060\u3055\u3044\u3002'
-  }
-}
-const DEFAULT_LEFT_SIDEBAR_WIDTH = 288
-const DEFAULT_SETTINGS_PANEL_WIDTH = 340
-const DEFAULT_RIGHT_INSPECTOR_WIDTH = 520
-const MIN_LEFT_SIDEBAR_WIDTH = 220
-const MAX_LEFT_SIDEBAR_WIDTH = 520
-const MIN_RIGHT_INSPECTOR_WIDTH = 380
-const MAX_RIGHT_INSPECTOR_WIDTH = 840
-const GRID_SIZE = 20
-const DEFAULT_TITLE_FONT_SIZE = 18
-const DEFAULT_CONTENT_FONT_SIZE = 14
-type GeneralSectionKey = 'context' | 'interface' | 'textStyle' | 'editing' | 'debug'
-
-const TEXT_STYLE_PRESETS: Record<TextStylePreset, { label: string; description: string; titleFamily: string; titleWeight: number; titleLetterSpacing: string; contentFamily: string; contentWeight: number; contentLineHeight: number; contentLetterSpacing: string }> = {
-  standard: {
-    label: 'Standard',
-    description: 'Balanced default for general work and notes.',
-    titleFamily: '"Georgia", "Times New Roman", serif',
-    titleWeight: 600,
-    titleLetterSpacing: '0em',
-    contentFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
-    contentWeight: 400,
-    contentLineHeight: 1.65,
-    contentLetterSpacing: '0em'
-  },
-  business: {
-    label: 'Business',
-    description: 'Clean and structured for business writing and planning.',
-    titleFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
-    titleWeight: 700,
-    titleLetterSpacing: '0.01em',
-    contentFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
-    contentWeight: 400,
-    contentLineHeight: 1.58,
-    contentLetterSpacing: '0.005em'
-  },
-  reading: {
-    label: 'Reading',
-    description: 'Relaxed spacing for long reading sessions.',
-    titleFamily: '"Yu Mincho", "Hiragino Mincho ProN", "Times New Roman", serif',
-    titleWeight: 700,
-    titleLetterSpacing: '0.01em',
-    contentFamily: '"Yu Mincho", "Hiragino Mincho ProN", "Times New Roman", serif',
-    contentWeight: 400,
-    contentLineHeight: 1.82,
-    contentLetterSpacing: '0.01em'
-  },
-  dense: {
-    label: 'Dense',
-    description: 'Tighter spacing when information density matters.',
-    titleFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
-    titleWeight: 650,
-    titleLetterSpacing: '0em',
-    contentFamily: '"Segoe UI", "Noto Sans JP", sans-serif',
-    contentWeight: 400,
-    contentLineHeight: 1.45,
-    contentLetterSpacing: '-0.005em'
-  }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function getActiveTextSize(target: TextStyleTarget, titleFontSize: number, contentFontSize: number): number {
-  if (target === 'title') return titleFontSize
-  if (target === 'content') return contentFontSize
-  return Math.round((titleFontSize + contentFontSize) / 2)
-}
-
-function getActiveTextPreset(target: TextStyleTarget, titleTextStylePreset: TextStylePreset, contentTextStylePreset: TextStylePreset): TextStylePreset {
-  if (target === 'title') return titleTextStylePreset
-  if (target === 'content') return contentTextStylePreset
-  return titleTextStylePreset === contentTextStylePreset ? titleTextStylePreset : 'standard'
-}
-
-function getTextStyleCssVars(titlePreset: TextStylePreset, contentPreset: TextStylePreset, titleFontSize: number, contentFontSize: number): React.CSSProperties {
-  const titleConfig = TEXT_STYLE_PRESETS[titlePreset]
-  const contentConfig = TEXT_STYLE_PRESETS[contentPreset]
-  return {
-    '--node-title-font-family': titleConfig.titleFamily,
-    '--node-title-font-size': `${titleFontSize}px`,
-    '--node-title-font-weight': String(titleConfig.titleWeight),
-    '--node-title-letter-spacing': titleConfig.titleLetterSpacing,
-    '--node-content-font-family': contentConfig.contentFamily,
-    '--node-content-font-size': `${contentFontSize}px`,
-    '--node-content-font-weight': String(contentConfig.contentWeight),
-    '--node-content-line-height': String(contentConfig.contentLineHeight),
-    '--node-content-letter-spacing': contentConfig.contentLetterSpacing
-  } as React.CSSProperties
-}
-
-
-function getImageAssetUrl(path: string | null | undefined): string | null {
-  if (!path) return null
-  return window.graphChat.toImageDataUrl(path)
-}
-
-function getImagePreviewUrl(node: GraphNodeRecord): string | null {
-  if (!node.image) return null
-  if (node.image.thumbnailDataUrl) return node.image.thumbnailDataUrl
-  return getImageAssetUrl(node.image.thumbnailPath ?? node.image.path)
-}
-
-function formatImageDimensions(width: number | null | undefined, height: number | null | undefined): string | null {
-  if (!width || !height) return null
-  return `${width} x ${height}`
-}
 
 
 type SelectionProofreadAction = {
@@ -3334,333 +3239,6 @@ function MenuAction({
         {trailingIcon ? <span className="shrink-0 text-[var(--text-dim)]">{trailingIcon}</span> : null}
       </span>
     </button>
-  )
-}
-
-function defaultTitle(type: NodeType): string {
-  switch (type) {
-    case 'context':
-      return 'Context'
-    case 'instruction':
-      return 'Instruction'
-    case 'image':
-      return 'Image'
-    default:
-      return 'Text'
-  }
-}
-
-function collectDownstreamTextNodes(sourceNodeId: string, nodes: GraphNodeRecord[], edges: GraphEdgeRecord[]): string[] {
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]))
-  // Build adjacency: sourceId -> [targetId, ...]
-  const adj = new Map<string, string[]>()
-  for (const edge of edges) {
-    if (!adj.has(edge.sourceId)) adj.set(edge.sourceId, [])
-    adj.get(edge.sourceId)!.push(edge.targetId)
-  }
-  // BFS to collect all downstream text nodes (excluding the source itself)
-  const visited = new Set<string>()
-  const queue = [sourceNodeId]
-  visited.add(sourceNodeId)
-  const textNodes: string[] = []
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    for (const targetId of adj.get(current) ?? []) {
-      if (visited.has(targetId)) continue
-      visited.add(targetId)
-      const target = nodeMap.get(targetId)
-      if (target?.type === 'text') {
-        textNodes.push(targetId)
-        queue.push(targetId)
-      }
-    }
-  }
-  // Topological sort via Kahn's algorithm (respects upstream dependencies)
-  const inDegree = new Map<string, number>()
-  const subAdj = new Map<string, string[]>()
-  const nodeSet = new Set(textNodes)
-  for (const id of textNodes) { inDegree.set(id, 0); subAdj.set(id, []) }
-  for (const edge of edges) {
-    if (nodeSet.has(edge.sourceId) && nodeSet.has(edge.targetId)) {
-      subAdj.get(edge.sourceId)!.push(edge.targetId)
-      inDegree.set(edge.targetId, (inDegree.get(edge.targetId) ?? 0) + 1)
-    }
-  }
-  const sorted: string[] = []
-  const ready = textNodes.filter((id) => inDegree.get(id) === 0)
-  while (ready.length > 0) {
-    const id = ready.shift()!
-    sorted.push(id)
-    for (const next of subAdj.get(id) ?? []) {
-      const deg = (inDegree.get(next) ?? 1) - 1
-      inDegree.set(next, deg)
-      if (deg === 0) ready.push(next)
-    }
-  }
-  return sorted
-}
-
-function displayNodeTypeLabel(type: NodeType, isLocal = false): string {
-  if (type === 'instruction') return isLocal ? 'local instruction' : 'global instruction'
-  if (type === 'context') return isLocal ? 'local context' : 'global context'
-  if (type === 'image') return 'image'
-  return type
-}
-
-function displayModelName(modelName: string): string {
-  return modelName.split(/[\\/]/).pop() ?? modelName
-}
-
-function getMiniMapNodeColor(node: Node<AppNodeData>): string {
-  const graphNode = node.data?.graphNode
-  const type = graphNode?.type
-  if (type === 'context') return graphNode?.isLocal ? '#2e4f82' : '#1e3a6b'
-  if (type === 'instruction') return graphNode?.isLocal ? '#6c3d63' : '#5b2d5d'
-  if (type === 'image') return '#4a8fcb'
-  return '#3f4150'
-}
-
-
-function snapPositionToGrid(position: { x: number; y: number }) {
-  return {
-    x: Math.round(position.x / GRID_SIZE) * GRID_SIZE,
-    y: Math.round(position.y / GRID_SIZE) * GRID_SIZE
-  }
-}
-
-function snapSizeToGrid(size: { width: number; height: number }) {
-  return {
-    width: Math.max(GRID_SIZE, Math.round(size.width / GRID_SIZE) * GRID_SIZE),
-    height: Math.max(GRID_SIZE, Math.round(size.height / GRID_SIZE) * GRID_SIZE)
-  }
-}
-
-function normalizeNodeBounds(
-  bounds: { position: { x: number; y: number }; size: { width: number; height: number } },
-  shouldSnap: boolean
-) {
-  if (!shouldSnap) return bounds
-  return {
-    position: snapPositionToGrid(bounds.position),
-    size: snapSizeToGrid(bounds.size)
-  }
-}
-
-
-function normalizePosition(position: { x: number; y: number }, shouldSnap: boolean) {
-  return shouldSnap ? snapPositionToGrid(position) : position
-}
-function buildSnapshotFromCanvas(snapshot: ProjectSnapshot, flowNodes: Array<Node<AppNodeData>>, shouldSnap: boolean): ProjectSnapshot {
-  const flowNodeMap = new Map(flowNodes.map((node) => [node.id, node]))
-  return {
-    ...snapshot,
-    nodes: snapshot.nodes.map((node) => {
-      const flowNode = flowNodeMap.get(node.id)
-      if (!flowNode) return node
-      const nextPosition = normalizePosition(flowNode.position, shouldSnap)
-      const nextSize = {
-        width: typeof flowNode.width === 'number' ? flowNode.width : node.size.width,
-        height: typeof flowNode.height === 'number' ? flowNode.height : node.size.height
-      }
-      return {
-        ...node,
-        position: nextPosition,
-        size: nextSize
-      }
-    })
-  }
-}
-
-
-function estimateTokenCount(text: string): number {
-  const trimmed = text.trim()
-  if (!trimmed) return 0
-
-  const segments = trimmed.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[A-Za-z0-9]+(?:['_-][A-Za-z0-9]+)*|[^\s]/gu) ?? []
-  let total = 0
-
-  for (const segment of segments) {
-    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]$/u.test(segment)) {
-      total += 1
-      continue
-    }
-    if (/^[A-Za-z0-9]+(?:['_-][A-Za-z0-9]+)*$/u.test(segment)) {
-      total += Math.max(1, Math.ceil(segment.length / 4))
-      continue
-    }
-    total += 1
-  }
-
-  return total
-}
-
-function isEditableElement(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
-}
-
-function getModelParameterLabel(model: ModelOption): string | null {
-  return model.metadata.parameterLabel
-}
-
-function getModelQuantizationLabel(model: ModelOption): string | null {
-  return model.metadata.quantizationLabel
-}
-
-function formatModelSize(sizeBytes: number): string {
-  const gib = sizeBytes / 1024 ** 3
-  return `${gib.toFixed(2)} GB`
-}
-
-function wouldCreateCycle(sourceId: string, targetId: string, edges: GraphEdgeRecord[]): boolean {
-  const childMap = new Map<string, string[]>()
-  for (const edge of edges) {
-    const children = childMap.get(edge.sourceId) ?? []
-    children.push(edge.targetId)
-    childMap.set(edge.sourceId, children)
-  }
-
-  const stack = [targetId]
-  const visited = new Set<string>()
-
-  while (stack.length > 0) {
-    const nodeId = stack.pop()
-    if (!nodeId || visited.has(nodeId)) continue
-    if (nodeId === sourceId) return true
-    visited.add(nodeId)
-    for (const childId of childMap.get(nodeId) ?? []) {
-      stack.push(childId)
-    }
-  }
-
-  return false
-}
-
-function resolveTargetHandleForEdge(edge: GraphEdgeRecord, nodes: GraphNodeRecord[] | Map<string, GraphNodeRecord>): NodeInputHandle | null {
-  if (edge.targetHandle) return edge.targetHandle
-  const nodeMap = nodes instanceof Map ? nodes : new Map(nodes.map((node) => [node.id, node]))
-  const sourceType = nodeMap.get(edge.sourceId)?.type
-  return sourceType ? defaultTargetHandleForNodeType(sourceType) : null
-}
-
-function defaultTargetHandleForNodeType(type: NodeType): NodeInputHandle {
-  if (type === 'text') return 'text'
-  if (type === 'context') return 'context'
-  if (type === 'image') return 'image'
-  return 'instruction'
-}
-
-function targetHandleLabel(handle: NodeInputHandle): string {
-  if (handle === 'text') return 'Text'
-  if (handle === 'context') return 'Context'
-  if (handle === 'image') return 'Image'
-  return 'Instruction'
-}
-function RoundedSmoothStepEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, markerStart }: EdgeProps) {
-  const [path] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 40})
-  return <BaseEdge path={path} style={style} markerEnd={markerEnd} markerStart={markerStart} />
-}
-
-const edgeTypes = { smoothstep: RoundedSmoothStepEdge }
-
-function edgeStyleForHandle(handle: NodeInputHandle | null) {
-  if (handle === 'context') {
-    return { strokeWidth: 2.6, stroke: '#6170d8', opacity: 0.84 }
-  }
-  if (handle === 'instruction') {
-    return { strokeWidth: 2.6, stroke: '#a267c8', opacity: 0.84 }
-  }
-  if (handle === 'image') {
-    return { strokeWidth: 2.8, stroke: '#4a8fcb', opacity: 0.9 }
-  }
-  return { strokeWidth: 4, stroke: '#6a728f', opacity: 0.84 }
-}
-
-function selectedEdgeStyleForHandle(handle: NodeInputHandle | null) {
-  if (handle === 'context') {
-    return { strokeWidth: 3.5, stroke: '#7b89f0', opacity: 1 }
-  }
-  if (handle === 'instruction') {
-    return { strokeWidth: 3.5, stroke: '#bf79df', opacity: 1 }
-  }
-  if (handle === 'image') {
-    return { strokeWidth: 3.8, stroke: '#79afe8', opacity: 1 }
-  }
-  return { strokeWidth: 4.5, stroke: '#8b95b8', opacity: 1 }
-}
-
-// ── System resource monitor ───────────────────────────────────────────────────
-
-type SystemResources = {
-  cpuUsage: number
-  ramUsed: number
-  ramTotal: number
-  gpuUsage: number | null
-  vramUsed: number | null
-  vramTotal: number | null
-}
-
-function ResourceBar({ label, pct, detail }: { label: string; pct: number; detail: string }) {
-  const clampedPct = Math.min(100, Math.max(0, pct))
-  const barColor = clampedPct > 85 ? '#ef4444' : clampedPct > 65 ? '#f97316' : 'var(--accent)'
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[10px] font-medium opacity-50">{label}</span>
-      <div className="h-[3px] w-10 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full transition-[width] duration-500 ease-out"
-          style={{ width: `${clampedPct}%`, backgroundColor: barColor }}
-        />
-      </div>
-      <span className="text-[10px] tabular-nums opacity-60">{detail}</span>
-    </div>
-  )
-}
-
-function fmtBytes(bytes: number): string {
-  const gb = bytes / (1024 ** 3)
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 ** 2)).toFixed(0)} MB`
-}
-
-function fmtMb(mb: number): string {
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`
-}
-
-function SystemResourceMonitor() {
-  const [res, setRes] = useState<SystemResources | null>(null)
-
-  useEffect(() => {
-    const off = window.graphChat.onSystemResources((payload) => setRes(payload))
-    return off
-  }, [])
-
-  if (!res) return null
-
-  const hasGpu = res.gpuUsage !== null
-  const hasVram = res.vramUsed !== null && res.vramTotal !== null
-
-  return (
-    <Panel position="bottom-right">
-      <div className="mb-1 mr-1 flex items-center gap-3 rounded-md border border-white/10 bg-black/45 px-3 py-2 text-[var(--text)] backdrop-blur-sm">
-        <ResourceBar label="CPU" pct={res.cpuUsage} detail={`${res.cpuUsage}%`} />
-        <ResourceBar
-          label="RAM"
-          pct={(res.ramUsed / res.ramTotal) * 100}
-          detail={`${fmtBytes(res.ramUsed)} / ${fmtBytes(res.ramTotal)}`}
-        />
-        {hasGpu && (
-          <ResourceBar label="GPU" pct={res.gpuUsage!} detail={`${res.gpuUsage}%`} />
-        )}
-        {hasVram && (
-          <ResourceBar
-            label="VRAM"
-            pct={(res.vramUsed! / res.vramTotal!) * 100}
-            detail={`${fmtMb(res.vramUsed!)} / ${fmtMb(res.vramTotal!)}`}
-          />
-        )}
-      </div>
-    </Panel>
   )
 }
 
