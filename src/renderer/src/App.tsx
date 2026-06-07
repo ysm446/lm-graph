@@ -7,6 +7,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -156,6 +157,7 @@ function GraphChatApp() {
   const [activeProjectId, setActiveProjectId] = useState('')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const selectedNodeIdsRef = useRef<string[]>([])
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [isProjectDirty, setIsProjectDirty] = useState(false)
@@ -515,6 +517,11 @@ function GraphChatApp() {
 
   function setSelectedNodes(nodeIds: string[]) {
     const nextIds = [...new Set(nodeIds)]
+    const currentIds = selectedNodeIdsRef.current
+    if (nextIds.length === currentIds.length && nextIds.every((id) => currentIds.includes(id))) {
+      return
+    }
+    selectedNodeIdsRef.current = nextIds
     setSelectedNodeIds(nextIds)
     if (nextIds.length !== 1) {
       setEditingNodeId(null)
@@ -525,7 +532,6 @@ function GraphChatApp() {
     setNodes((current) =>
       current.map((node) => ({
         ...node,
-        selected: nextIds.includes(node.id),
         data: {
           ...node.data,
           isSelected: nextIds.includes(node.id)
@@ -615,7 +621,11 @@ function GraphChatApp() {
         style: edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
       }
     }))
-    setSelectedNodeIds((current) => current.filter((id) => normalizedSnapshot.nodes.some((node) => node.id === id)))
+    setSelectedNodeIds((current) => {
+      const nextIds = current.filter((id) => normalizedSnapshot.nodes.some((node) => node.id === id))
+      selectedNodeIdsRef.current = nextIds
+      return nextIds
+    })
     setSelectedEdgeId((current) => normalizedSnapshot.edges.some((edge) => edge.id === current) ? current : null)
   }
 
@@ -1244,13 +1254,7 @@ function GraphChatApp() {
           selectedIds.delete(change.id)
         }
       }
-      setSelectedNodeIds(Array.from(selectedIds))
-      if (selectedIds.size !== 1) {
-        setEditingNodeId(null)
-      }
-      if (selectedIds.size > 0) {
-        setSelectedEdge(null)
-      }
+      setSelectedNodes(Array.from(selectedIds))
     }
     const positionChanges = changes.filter((change) => change.type === 'position' && change.position && !change.dragging)
     for (const change of positionChanges) {
@@ -1271,6 +1275,7 @@ function GraphChatApp() {
       if (change.type === 'select') {
         setSelectedEdge(change.selected ? change.id : null)
         if (change.selected) {
+          selectedNodeIdsRef.current = []
           setSelectedNodeIds([])
           setEditingNodeId(null)
           setStatus('Connection selected. Press Delete to remove.')
@@ -1791,6 +1796,9 @@ function GraphChatApp() {
           minZoom={0.1}
           maxZoom={2}
           defaultViewport={projectViewportsRef.current[activeProjectId] ?? { x: 0, y: 0, zoom: 1 }}
+          panOnDrag={[1]}
+          selectionOnDrag
+          selectionMode={SelectionMode.Partial}
           snapToGrid={isSnapToGridEnabled}
           snapGrid={snapGrid}
           onPaneContextMenu={openCanvasMenu}
@@ -1801,10 +1809,14 @@ function GraphChatApp() {
               setSelectedEdge(null)
             }}
           onNodesChange={handleNodeChanges}
+          onSelectionChange={({ nodes: selectedNodes }) => {
+            setSelectedNodes(selectedNodes.map((node) => node.id))
+          }}
           onEdgesChange={handleEdgeChanges}
           onConnect={(connection) => void onConnect(connection)}
           onNodeClick={(event, node) => {
-            setSelectedNodes(event.shiftKey ? (selectedNodeIds.includes(node.id) ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id]) : [node.id])
+            const currentSelection = selectedNodeIdsRef.current
+            setSelectedNodes(event.shiftKey ? (currentSelection.includes(node.id) ? currentSelection.filter((id) => id !== node.id) : [...currentSelection, node.id]) : [node.id])
             setSelectedEdge(null)
             setCanvasMenu(null)
             setNodeMenu(null)
@@ -2366,10 +2378,10 @@ function SwitchIndexControl({
   const safeMax = Math.max(1, max)
   const safeValue = Math.max(1, Math.min(safeMax, value))
   return (
-    <div className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-3">
+    <div className="nodrag nopan px-1 py-2">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Selected input</div>
-        <div className={`rounded-md border px-2 py-1 text-sm font-semibold tabular-nums ${kind === 'context' ? 'border-[rgba(111,126,255,0.45)] text-[rgb(162,170,255)]' : 'border-[rgba(201,108,210,0.45)] text-[rgb(221,156,221)]'}`}>
+        <div className={`text-lg font-semibold tabular-nums ${kind === 'context' ? 'text-[rgb(162,170,255)]' : 'text-[rgb(221,156,221)]'}`}>
           #{safeValue}
         </div>
       </div>
