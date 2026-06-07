@@ -8,28 +8,29 @@ function RoundedSmoothStepEdge({ sourceX, sourceY, targetX, targetY, sourcePosit
 
 export const edgeTypes = { smoothstep: RoundedSmoothStepEdge }
 
-export function edgeStyleForHandle(handle: NodeInputHandle | null) {
+export function edgeStyleForHandle(handle: NodeInputHandle | null, options: { muted?: boolean } = {}) {
+  const mutedStyle = options.muted ? { strokeDasharray: '8 7', opacity: 0.38 } : { strokeDasharray: 'none' }
   if (handle === 'context') {
-    return { strokeWidth: 2.6, stroke: '#6170d8', opacity: 0.84 }
+    return { strokeWidth: 2.6, stroke: '#6170d8', opacity: 0.84, ...mutedStyle }
   }
   if (handle === 'instruction') {
-    return { strokeWidth: 2.6, stroke: '#a267c8', opacity: 0.84 }
+    return { strokeWidth: 2.6, stroke: '#a267c8', opacity: 0.84, ...mutedStyle }
   }
   if (handle === 'image') {
-    return { strokeWidth: 2.8, stroke: '#4a8fcb', opacity: 0.9 }
+    return { strokeWidth: 2.8, stroke: '#4a8fcb', opacity: 0.9, ...mutedStyle }
   }
-  return { strokeWidth: 4, stroke: '#6a728f', opacity: 0.84 }
+  return { strokeWidth: 4, stroke: '#6a728f', opacity: 0.84, ...mutedStyle }
 }
 
 export function selectedEdgeStyleForHandle(handle: NodeInputHandle | null) {
   if (handle === 'context') {
-    return { strokeWidth: 3.5, stroke: '#7b89f0', opacity: 1 }
+    return { strokeWidth: 3.5, stroke: '#7b89f0', opacity: 1, strokeDasharray: 'none' }
   }
   if (handle === 'instruction') {
-    return { strokeWidth: 3.5, stroke: '#bf79df', opacity: 1 }
+    return { strokeWidth: 3.5, stroke: '#bf79df', opacity: 1, strokeDasharray: 'none' }
   }
   if (handle === 'image') {
-    return { strokeWidth: 3.8, stroke: '#79afe8', opacity: 1 }
+    return { strokeWidth: 3.8, stroke: '#79afe8', opacity: 1, strokeDasharray: 'none' }
   }
-  return { strokeWidth: 4.5, stroke: '#8b95b8', opacity: 1 }
+  return { strokeWidth: 4.5, stroke: '#8b95b8', opacity: 1, strokeDasharray: 'none' }
 }

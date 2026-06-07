@@ -1,19 +1,20 @@
 # 進捗
 
 作成日時: 2026-06-07 21:59
-更新日時: 2026-06-07 22:03
+更新日時: 2026-06-07 22:38
 
 ## 現在の状態
 
 LM Graph は、ローカル LLM ワークフローをノードグラフで構築するデスクトップアプリとして、基本機能から実用的な編集・生成機能まで実装済みです。
 
-最新の履歴では、`llama-server.exe` の `b9496-win-cuda13-x64` 優先選択、アプリ名の `LM Graph` への統一、モデル・プロジェクト一覧 UI の改善、モデルメタデータ表示、VRAM 解放スクリプト、レンダラー utilities の整理が行われています。
+最新の作業では、context / instruction の入力候補を番号付きピンとスライダーで切り替える switch node を追加し、接続に応じた入力ピン追加、接続済み入力数に合わせたスライダー範囲、選択中 edge の実線表示と非選択 edge の破線表示に対応しました。あわせて `llama-server.exe` の `b9496-win-cuda13-x64` 優先選択、アプリ名の `LM Graph` への統一、モデル・プロジェクト一覧 UI の改善、モデルメタデータ表示、VRAM 解放スクリプト、レンダラー utilities の整理が行われています。
 
 ## 完了済み
 
 - Electron + React + TypeScript + React Flow のアプリ基盤。
 - SQLite によるプロジェクト保存と、`data/` 配下への実行時データ整理。
 - `text` / `context` / `instruction` / `image` ノードの作成、編集、接続。
+- `contextSwitch` / `instructionSwitch` ノードによる context / instruction 入力の選択。
 - 型付きハンドル、サイクル防止、エッジ選択、ノード種別ごとの表示調整。
 - Global / Local スコープと上流文脈の伝播。
 - ローカル `llama.cpp` サーバー管理と `text` ノードへのストリーミング生成。

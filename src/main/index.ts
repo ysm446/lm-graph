@@ -748,10 +748,50 @@ function getHandleParents(
   edges: GraphEdgeRecord[],
   nodeMap: Map<string, GraphNodeRecord>
 ): GraphNodeRecord[] {
-  return edges
-    .filter((edge) => edge.targetId === targetId && resolveTargetHandle(edge, nodeMap) === handle)
+  const parents = edges
+    .filter((edge) => edge.targetId === targetId && baseTargetHandle(resolveTargetHandle(edge, nodeMap)) === handle)
     .map((edge) => nodeMap.get(edge.sourceId))
     .filter((node): node is GraphNodeRecord => Boolean(node))
+  if (handle !== 'context' && handle !== 'instruction') return parents
+  return parents.flatMap((node) => resolveSwitchParent(node, handle, edges, nodeMap, new Set([targetId])))
+}
+
+function resolveSwitchParent(
+  node: GraphNodeRecord,
+  handle: 'context' | 'instruction',
+  edges: GraphEdgeRecord[],
+  nodeMap: Map<string, GraphNodeRecord>,
+  visited: Set<string>
+): GraphNodeRecord[] {
+  if (!isSwitchForHandle(node, handle)) {
+    return defaultTargetHandleForNodeType(node.type) === handle ? [node] : []
+  }
+  if (visited.has(node.id)) return []
+  visited.add(node.id)
+
+  const selectedInputIndex = Math.max(1, parseSwitchInputIndex(node.content))
+  const selectedHandle = `${handle}:${selectedInputIndex}` as NodeInputHandle
+  const numberedInput = edges
+    .filter((edge) => edge.targetId === node.id && resolveTargetHandle(edge, nodeMap) === selectedHandle)
+    .map((edge) => nodeMap.get(edge.sourceId))
+    .find((input): input is GraphNodeRecord => Boolean(input))
+  if (numberedInput) return resolveSwitchParent(numberedInput, handle, edges, nodeMap, visited)
+
+  const compatibleInputs = edges
+    .filter((edge) => edge.targetId === node.id && baseTargetHandle(resolveTargetHandle(edge, nodeMap)) === handle)
+    .map((edge) => nodeMap.get(edge.sourceId))
+    .filter((input): input is GraphNodeRecord => Boolean(input))
+  const fallbackInput = compatibleInputs[Math.min(selectedInputIndex - 1, compatibleInputs.length - 1)]
+  return fallbackInput ? resolveSwitchParent(fallbackInput, handle, edges, nodeMap, visited) : []
+}
+
+function isSwitchForHandle(node: GraphNodeRecord, handle: 'context' | 'instruction'): boolean {
+  return (handle === 'context' && node.type === 'contextSwitch') || (handle === 'instruction' && node.type === 'instructionSwitch')
+}
+
+function parseSwitchInputIndex(content: string): number {
+  const parsed = Number.parseInt(content.trim(), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
 }
 
 function collectUpstreamTextNodes(
@@ -779,7 +819,7 @@ function traverseTextParents(
 ): GraphNodeRecord[] {
   const results: GraphNodeRecord[] = []
   for (const edge of edges) {
-    if (edge.targetId !== nodeId || resolveTargetHandle(edge, nodeMap) !== 'text') continue
+    if (edge.targetId !== nodeId || baseTargetHandle(resolveTargetHandle(edge, nodeMap)) !== 'text') continue
     const parent = nodeMap.get(edge.sourceId)
     if (!parent || parent.type !== 'text' || visited.has(parent.id)) continue
     visited.add(parent.id)
@@ -795,9 +835,16 @@ function resolveTargetHandle(edge: GraphEdgeRecord, nodeMap: Map<string, GraphNo
   return sourceType ? defaultTargetHandleForNodeType(sourceType) : null
 }
 
+function baseTargetHandle(handle: NodeInputHandle | null): NodeInputHandle | null {
+  if (!handle) return null
+  if (handle.startsWith('context:')) return 'context'
+  if (handle.startsWith('instruction:')) return 'instruction'
+  return handle
+}
+
 function defaultTargetHandleForNodeType(type: NodeType): NodeInputHandle | null {
   if (type === 'text') return 'text'
-  if (type === 'context') return 'context'
+  if (type === 'context' || type === 'contextSwitch') return 'context'
   if (type === 'image') return 'image'
   return 'instruction'
 }

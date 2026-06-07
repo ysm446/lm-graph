@@ -106,7 +106,7 @@ export class GraphRepository {
       CREATE TABLE IF NOT EXISTS nodes (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        type TEXT NOT NULL CHECK(type IN ('text', 'context', 'local_context', 'instruction', 'local_instruction', 'image')),
+        type TEXT NOT NULL CHECK(type IN ('text', 'context', 'local_context', 'instruction', 'local_instruction', 'image', 'contextSwitch', 'instructionSwitch')),
         title TEXT NOT NULL DEFAULT '',
         content TEXT NOT NULL DEFAULT '',
         instruction TEXT,
@@ -506,7 +506,8 @@ export class GraphRepository {
   private ensureNodeTypeConstraint(): void {
     const row = this.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'nodes'").get() as { sql: string | null } | undefined
     const createSql = row?.sql ?? ''
-    if (createSql.includes("'image'")) return
+    const requiredTypes = ["'image'", "'contextSwitch'", "'instructionSwitch'"]
+    if (requiredTypes.every((type) => createSql.includes(type))) return
 
     const nodeRows = this.db.prepare(`
       SELECT n.id, n.project_id, n.type, n.title, n.content, n.instruction, n.is_local, n.model, n.is_generated, n.generation_meta, n.image_asset, n.created_at, n.updated_at,
@@ -527,7 +528,7 @@ export class GraphRepository {
         CREATE TABLE nodes (
           id TEXT PRIMARY KEY,
           project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-          type TEXT NOT NULL CHECK(type IN ('text', 'context', 'local_context', 'instruction', 'local_instruction', 'image')),
+          type TEXT NOT NULL CHECK(type IN ('text', 'context', 'local_context', 'instruction', 'local_instruction', 'image', 'contextSwitch', 'instructionSwitch')),
           title TEXT NOT NULL DEFAULT '',
           content TEXT NOT NULL DEFAULT '',
           instruction TEXT,

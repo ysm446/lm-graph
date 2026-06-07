@@ -41,14 +41,21 @@ import {
 } from './constants'
 import { edgeStyleForHandle, edgeTypes, selectedEdgeStyleForHandle } from './flowEdges'
 import {
+  baseTargetHandle,
   buildSnapshotFromCanvas,
   collectDownstreamTextNodes,
   defaultTargetHandleForNodeType,
   defaultTitle,
   displayNodeTypeLabel,
   getMiniMapNodeColor,
+  isSwitchNodeType,
   normalizeNodeBounds,
+  normalizePosition,
+  parseSwitchInputIndex,
   resolveTargetHandleForEdge,
+  switchHandleAt,
+  switchHandleIndex,
+  switchInputHandleForNodeType,
   targetHandleLabel,
   wouldCreateCycle
 } from './graphUtils'
@@ -61,6 +68,7 @@ type AppNodeData = {
   isSelected: boolean
   isEditing: boolean
   isGenerating: boolean
+  switchInputCount: number
   onSelect: (id: string) => void
   onChange: (node: GraphNodeRecord) => void
   onStartEdit: (id: string) => void
@@ -95,6 +103,19 @@ type NodeMenuState = {
   y: number
   nodeId: string
 } | null
+
+function getSwitchInputCount(node: GraphNodeRecord, edges: GraphEdgeRecord[]): number {
+  if (!isSwitchNodeType(node.type)) return 0
+  const baseHandle = switchInputHandleForNodeType(node.type)
+  const maxConnectedIndex = edges
+    .filter((edge) => edge.targetId === node.id && baseTargetHandle(edge.targetHandle) === baseHandle)
+    .reduce((max, edge) => Math.max(max, switchHandleIndex(edge.targetHandle) ?? 1), 0)
+  return Math.min(12, Math.max(1, maxConnectedIndex + 1))
+}
+
+function getSwitchSliderMax(inputCount: number): number {
+  return Math.max(1, Math.min(12, inputCount - 1))
+}
 
 type ProjectDialogState =
   | {
@@ -316,13 +337,22 @@ function GraphChatApp() {
 
   useEffect(() => {
     setEdges((current) =>
-      current.map((edge) => ({
-        ...edge,
-        selected: edge.id === selectedEdgeId,
-        style: edge.id === selectedEdgeId
-          ? selectedEdgeStyleForHandle((edge.targetHandle as NodeInputHandle | null) ?? null)
-          : edgeStyleForHandle((edge.targetHandle as NodeInputHandle | null) ?? null)
-      }))
+      current.map((edge) => {
+        const graphEdge = snapshotRef.current?.edges.find((item) => item.id === edge.id)
+        const targetNode = graphEdge ? snapshotRef.current?.nodes.find((node) => node.id === graphEdge.targetId) : null
+        const effectiveTargetHandle = (graphEdge?.targetHandle as NodeInputHandle | null) ?? ((edge.targetHandle as NodeInputHandle | null) ?? null)
+        const targetBaseHandle = baseTargetHandle(effectiveTargetHandle)
+        const selectedSwitchIndex = targetNode && isSwitchNodeType(targetNode.type) ? parseSwitchInputIndex(targetNode.content) : null
+        const edgeSwitchIndex = switchHandleIndex(effectiveTargetHandle)
+        const isMutedSwitchEdge = selectedSwitchIndex !== null && edgeSwitchIndex !== null && edgeSwitchIndex !== selectedSwitchIndex
+        return {
+          ...edge,
+          selected: edge.id === selectedEdgeId,
+          style: edge.id === selectedEdgeId
+            ? selectedEdgeStyleForHandle(targetBaseHandle)
+            : edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
+        }
+      })
     )
   }, [selectedEdgeId])
 
@@ -466,6 +496,10 @@ function GraphChatApp() {
     if (liveGenerationContent?.nodeId !== selectedNode.id) return selectedNode
     return { ...selectedNode, content: liveGenerationContent.content }
   }, [selectedNode, liveGenerationContent])
+  const selectedSwitchInputCount = useMemo(() => {
+    if (!selectedNodeForDetails || !snapshotRef.current) return 0
+    return getSwitchInputCount(selectedNodeForDetails, snapshotRef.current.edges)
+  }, [selectedNodeForDetails, edges])
   const nodeTypes = useMemo(() => ({ graphNode: GraphNodeCard }), [])
   const proOptions = useMemo(() => ({ hideAttribution: true }), [])
   const canvasStyle = useMemo(() => ({ backgroundColor: 'var(--bg-canvas)' }), [])
@@ -506,16 +540,33 @@ function GraphChatApp() {
 
   function applySnapshot(snapshot: ProjectSnapshot) {
     const previousEdgeMap = new Map((snapshotRef.current?.edges ?? []).map((edge) => [edge.id, edge]))
+    const nodeMap = new Map(snapshot.nodes.map((node) => [node.id, node]))
+    const switchHandleCounters = new Map<string, number>()
     const normalizedSnapshot: ProjectSnapshot = {
       ...snapshot,
       edges: snapshot.edges.map((edge) => {
         const previous = previousEdgeMap.get(edge.id)
+        const targetNode = nodeMap.get(edge.targetId)
+        const targetSwitchHandle = targetNode ? switchInputHandleForNodeType(targetNode.type) : null
+        const resolvedTargetHandle = edge.targetHandle ?? previous?.targetHandle ?? resolveTargetHandleForEdge(edge, snapshot.nodes)
+        let targetHandle = resolvedTargetHandle
+        if (targetSwitchHandle && baseTargetHandle(targetHandle) === targetSwitchHandle && switchHandleIndex(targetHandle) === null) {
+          const nextIndex = (switchHandleCounters.get(edge.targetId) ?? 0) + 1
+          switchHandleCounters.set(edge.targetId, nextIndex)
+          targetHandle = switchHandleAt(targetNode!.type as 'contextSwitch' | 'instructionSwitch', nextIndex)
+        }
         return {
           ...edge,
           sourceHandle: edge.sourceHandle ?? previous?.sourceHandle ?? 'output',
-          targetHandle: edge.targetHandle ?? previous?.targetHandle ?? resolveTargetHandleForEdge(edge, snapshot.nodes)
+          targetHandle
         }
       })
+    }
+    const normalizedNodeMap = new Map(normalizedSnapshot.nodes.map((node) => [node.id, node]))
+    const switchInputCounts = new Map<string, number>()
+    for (const node of normalizedSnapshot.nodes) {
+      if (!isSwitchNodeType(node.type)) continue
+      switchInputCounts.set(node.id, getSwitchInputCount(node, normalizedSnapshot.edges))
     }
     snapshotRef.current = normalizedSnapshot
     setActiveProjectId(normalizedSnapshot.project.id)
@@ -529,6 +580,7 @@ function GraphChatApp() {
         isSelected: selectedNodeIds.includes(node.id),
         isEditing: node.id === editingNodeId,
         isGenerating: generationRef.current?.nodeId === node.id,
+        switchInputCount: switchInputCounts.get(node.id) ?? 0,
         onSelect: selectNode,
         onChange: (updated) => {
           mutateLocalNode(updated)
@@ -546,16 +598,23 @@ function GraphChatApp() {
         onResize: handleResize
       }
     })))
-    setEdges(normalizedSnapshot.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.sourceId,
-      target: edge.targetId,
-      sourceHandle: edge.sourceHandle ?? 'output',
-      targetHandle: edge.targetHandle,
-      zIndex: 0,
-      animated: false,
-      style: edgeStyleForHandle((edge.targetHandle as NodeInputHandle | null) ?? null)
-    })))
+    setEdges(normalizedSnapshot.edges.map((edge) => {
+      const targetNode = normalizedNodeMap.get(edge.targetId)
+      const targetBaseHandle = baseTargetHandle((edge.targetHandle as NodeInputHandle | null) ?? null)
+      const selectedSwitchIndex = targetNode && isSwitchNodeType(targetNode.type) ? parseSwitchInputIndex(targetNode.content) : null
+      const edgeSwitchIndex = switchHandleIndex((edge.targetHandle as NodeInputHandle | null) ?? null)
+      const isMutedSwitchEdge = selectedSwitchIndex !== null && edgeSwitchIndex !== null && edgeSwitchIndex !== selectedSwitchIndex
+      return {
+        id: edge.id,
+        source: edge.sourceId,
+        target: edge.targetId,
+        sourceHandle: edge.sourceHandle ?? 'output',
+        targetHandle: edge.targetHandle,
+        zIndex: 0,
+        animated: false,
+        style: edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
+      }
+    }))
     setSelectedNodeIds((current) => current.filter((id) => normalizedSnapshot.nodes.some((node) => node.id === id)))
     setSelectedEdgeId((current) => normalizedSnapshot.edges.some((edge) => edge.id === current) ? current : null)
   }
@@ -664,7 +723,6 @@ function GraphChatApp() {
       projectId: activeProjectId,
       type,
       title: defaultTitle(type),
-      content: '',
       instruction: null,
       isLocal: false,
       model: null,
@@ -674,7 +732,8 @@ function GraphChatApp() {
       createdAt: now,
       updatedAt: now,
       position: position ? base : normalizePosition({ x: base.x + 40, y: base.y + 160 }, isSnapToGridEnabled),
-      size: type === 'image' ? { width: 360, height: 280 } : { width: 480, height: 360 }
+      content: isSwitchNodeType(type) ? '1' : '',
+      size: type === 'image' ? { width: 360, height: 280 } : isSwitchNodeType(type) ? { width: 320, height: 220 } : { width: 480, height: 360 }
     }
     applySnapshot({ ...snapshot, nodes: [...snapshot.nodes, node] })
     setIsProjectDirty(true)
@@ -795,15 +854,23 @@ function GraphChatApp() {
       }
       const sourceNode = snapshot.nodes.find((node) => node.id === connection.source)
       const targetNode = snapshot.nodes.find((node) => node.id === connection.target)
-      const targetHandle = (connection.targetHandle as NodeInputHandle | null) ?? (sourceNode ? defaultTargetHandleForNodeType(sourceNode.type) : null)
+      const targetHandle = (connection.targetHandle as NodeInputHandle | null)
+        ?? (targetNode && isSwitchNodeType(targetNode.type) ? switchHandleAt(targetNode.type, parseSwitchInputIndex(targetNode.content)) : null)
+        ?? (targetNode ? switchInputHandleForNodeType(targetNode.type) : null)
+        ?? (sourceNode ? defaultTargetHandleForNodeType(sourceNode.type) : null)
+      const baseHandle = baseTargetHandle(targetHandle)
       if (!sourceNode || !targetNode) {
         throw new Error('Source or target node was not found.')
       }
-      if (targetNode.type !== 'text' || !targetHandle) {
-        throw new Error('Connect to one of the text node input handles.')
+      if (!targetHandle || !baseHandle) {
+        throw new Error('Connect to a compatible input handle.')
       }
       const expectedHandle = defaultTargetHandleForNodeType(sourceNode.type)
-      if (expectedHandle !== targetHandle) {
+      const targetSwitchHandle = switchInputHandleForNodeType(targetNode.type)
+      if (targetNode.type !== 'text' && targetSwitchHandle !== baseHandle) {
+        throw new Error('Connect to a text node or a compatible switch node.')
+      }
+      if (expectedHandle !== baseHandle) {
         throw new Error(`${displayNodeTypeLabel(sourceNode.type, sourceNode.isLocal)} nodes connect to the ${targetHandleLabel(expectedHandle)} input.`)
       }
       const nextEdge: GraphEdgeRecord = {
@@ -1302,7 +1369,24 @@ function GraphChatApp() {
 
   function mutateLocalNode(updated: GraphNodeRecord) {
     snapshotRef.current = snapshotRef.current ? { ...snapshotRef.current, nodes: snapshotRef.current.nodes.map((node) => node.id === updated.id ? updated : node) } : snapshotRef.current
-    setNodes((current) => current.map((node) => node.id === updated.id ? { ...node, position: updated.position, style: { width: updated.size.width, height: updated.size.height }, data: { ...node.data, graphNode: updated, isSelected: selectedNodeIds.includes(updated.id), isEditing: updated.id === editingNodeId, isGenerating: generationRef.current?.nodeId === updated.id } } : node))
+    const currentSnapshot = snapshotRef.current
+    setNodes((current) => current.map((node) => node.id === updated.id ? { ...node, position: updated.position, style: { width: updated.size.width, height: updated.size.height }, data: { ...node.data, graphNode: updated, isSelected: selectedNodeIds.includes(updated.id), isEditing: updated.id === editingNodeId, isGenerating: generationRef.current?.nodeId === updated.id, switchInputCount: currentSnapshot ? getSwitchInputCount(updated, currentSnapshot.edges) : node.data.switchInputCount } } : node))
+    if (currentSnapshot && isSwitchNodeType(updated.type)) {
+      setEdges((current) => current.map((edge) => {
+        const graphEdge = currentSnapshot.edges.find((item) => item.id === edge.id)
+        if (!graphEdge || graphEdge.targetId !== updated.id) return edge
+        const effectiveTargetHandle = (graphEdge.targetHandle as NodeInputHandle | null) ?? ((edge.targetHandle as NodeInputHandle | null) ?? null)
+        const targetBaseHandle = baseTargetHandle(effectiveTargetHandle)
+        const edgeSwitchIndex = switchHandleIndex(effectiveTargetHandle)
+        const isMutedSwitchEdge = edgeSwitchIndex !== null && edgeSwitchIndex !== parseSwitchInputIndex(updated.content)
+        return {
+          ...edge,
+          style: edge.id === selectedEdgeId
+            ? selectedEdgeStyleForHandle(targetBaseHandle)
+            : edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
+        }
+      }))
+    }
   }
 
   function openCanvasMenu(event: React.MouseEvent) {
@@ -1507,13 +1591,15 @@ function GraphChatApp() {
         )}
         {canvasMenu && (
           <div
-            className="absolute z-30 w-40 rounded-xl border border-[var(--border-strong)] bg-[var(--bg-card)] p-1 shadow-2xl"
+            className="absolute z-30 w-56 rounded-xl border border-[var(--border-strong)] bg-[var(--bg-card)] p-1 shadow-2xl"
             style={{ left: canvasMenu.x, top: canvasMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
             <MenuAction compact label="Add Text" onClick={() => void addNode('text', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Context" onClick={() => void addNode('context', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Instruction" onClick={() => void addNode('instruction', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
+            <MenuAction compact label="Add Context Switch" onClick={() => void addNode('contextSwitch', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
+            <MenuAction compact label="Add Instruction Switch" onClick={() => void addNode('instructionSwitch', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Image" onClick={() => void addImageNode({ x: canvasMenu.flowX, y: canvasMenu.flowY })} />
           </div>
         )}
@@ -1761,6 +1847,7 @@ function GraphChatApp() {
                 disabled={generation?.nodeId === selectedNodeForDetails.id}
                 currentModelName={isModelLoaded ? (settings?.selectedModelName ?? null) : null}
                 contextLength={settings?.contextLength ?? null}
+                switchInputCount={selectedSwitchInputCount}
                 onGenerate={() => void handleGenerate(selectedNodeForDetails.id)}
                 onProofreadRequest={handleProofreadRequest}
                 onChange={(updated) => {
@@ -1896,13 +1983,17 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
     text: 'border-[#6b7280] bg-[var(--bg-card)]',
     context: 'border-[rgb(90,100,210)] bg-[var(--bg-card)]',
     instruction: 'border-[rgb(156,76,196)] bg-[var(--bg-card)]',
-    image: 'border-[#4a8fcb] bg-[var(--bg-card)]'
+    image: 'border-[#4a8fcb] bg-[var(--bg-card)]',
+    contextSwitch: 'border-[rgb(74,91,190)] bg-[var(--bg-card)]',
+    instructionSwitch: 'border-[rgb(136,70,160)] bg-[var(--bg-card)]'
   } as const
   const outputHandleColors = {
     text: '!border-[var(--text-faint)] !bg-[var(--text)]',
     context: '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]',
     instruction: '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]',
-    image: '!border-[#669fe0] !bg-[#669fe0]' 
+    image: '!border-[#669fe0] !bg-[#669fe0]',
+    contextSwitch: '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]',
+    instructionSwitch: '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]'
   } as const
   const imagePreviewUrl = getImagePreviewUrl(node)
   const imageDimensions = formatImageDimensions(node.image?.width, node.image?.height)
@@ -1938,6 +2029,19 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
     }
   }
 
+  function changeSwitchIndex(value: number) {
+    const nextIndex = Math.max(1, Math.min(12, value))
+    const nextContent = String(nextIndex)
+    setDraftContent(nextContent)
+    if (nextContent !== node.content) {
+      data.onChange({ ...node, content: nextContent })
+    }
+  }
+
+  const switchInputCount = isSwitchNodeType(node.type)
+    ? data.switchInputCount
+    : 0
+
   return (
     <div className={`relative h-full w-full rounded-3xl border-2 px-9 py-6 shadow-lg shadow-black/30 transition ${borderStyle} ${colors[node.type]} ${!data.isGenerating && data.isSelected ? 'ring-4 ring-[var(--accent-border)]' : ''}`} onMouseDown={() => data.onSelect(node.id)}>
       {data.isGenerating && <div className="node-generating-border pointer-events-none absolute inset-0 rounded-3xl" />}
@@ -1970,11 +2074,35 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           <div className="pointer-events-none absolute -left-8 top-[72%] text-[10px] font-medium uppercase tracking-[0.16em] text-[#8db6e8]">Img</div>
         </>
       )}
+      {isSwitchNodeType(node.type) && Array.from({ length: switchInputCount }, (_, inputIndex) => {
+        const index = inputIndex + 1
+        const selectedIndex = parseSwitchInputIndex(node.content)
+        const top = `${((index) / (switchInputCount + 1)) * 100}%`
+        const isSelectedInput = index === selectedIndex
+        const isContextSwitch = node.type === 'contextSwitch'
+        return (
+          <div key={index}>
+            <Handle
+              id={switchHandleAt(node.type, index)}
+              type="target"
+              position={Position.Left}
+              style={{ top }}
+              className={`!h-5 !w-5 !border-2 ${isContextSwitch ? '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]' : '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]'} ${isSelectedInput ? '!shadow-[0_0_0_4px_rgba(255,255,255,0.18)]' : '!opacity-55'}`}
+            />
+            <div
+              className={`pointer-events-none absolute -left-10 -translate-y-1/2 text-[10px] font-semibold tabular-nums tracking-[0.08em] ${isContextSwitch ? 'text-[rgb(162,170,255)]' : 'text-[rgb(221,156,221)]'} ${isSelectedInput ? 'opacity-100' : 'opacity-55'}`}
+              style={{ top }}
+            >
+              {index}
+            </div>
+          </div>
+        )
+      })}
       <Handle
         id="output"
         type="source"
         position={Position.Right}
-        style={{ top: node.type === 'image' ? '50%' : node.type === 'text' ? textHandleTop : '28%' }}
+        style={{ top: node.type === 'image' || isSwitchNodeType(node.type) ? '50%' : node.type === 'text' ? textHandleTop : '28%' }}
         className={`!h-5 !w-5 !border-2 ${outputHandleColors[node.type]}`}
       />
       <div className="flex h-full flex-col">
@@ -2037,6 +2165,14 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
               style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}
             />
+            {isSwitchNodeType(node.type) ? (
+              <SwitchIndexControl
+                value={parseSwitchInputIndex(draftContent)}
+                max={getSwitchSliderMax(switchInputCount)}
+                kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+                onChange={changeSwitchIndex}
+              />
+            ) : (
             <div className="relative flex-1">
               <textarea
                 ref={textareaRef}
@@ -2099,6 +2235,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 </button>
               )}
             </div>
+            )}
           </div>
         ) : node.type === 'image' ? (
           <div className="flex flex-1 min-h-0 flex-col gap-3">
@@ -2156,6 +2293,15 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               onDoubleClick={() => data.onStartEdit(node.id)}
             >{node.content.trim() || 'No notes yet.'}</div>
           </div>
+        ) : isSwitchNodeType(node.type) ? (
+          <div className="flex flex-1 flex-col justify-center gap-4 text-[var(--text)]">
+            <SwitchIndexControl
+              value={parseSwitchInputIndex(node.content)}
+              max={getSwitchSliderMax(switchInputCount)}
+              kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+              onChange={changeSwitchIndex}
+            />
+          </div>
         ) : (
           <div
             className="node-scrollbar nowheel flex-1 overflow-y-auto whitespace-pre-wrap pr-1 text-[var(--text)]"
@@ -2206,11 +2352,51 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   )
 }
 
+function SwitchIndexControl({
+  value,
+  max,
+  kind,
+  onChange
+}: {
+  value: number
+  max: number
+  kind: 'context' | 'instruction'
+  onChange: (value: number) => void
+}) {
+  const safeMax = Math.max(1, max)
+  const safeValue = Math.max(1, Math.min(safeMax, value))
+  return (
+    <div className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Selected input</div>
+        <div className={`rounded-md border px-2 py-1 text-sm font-semibold tabular-nums ${kind === 'context' ? 'border-[rgba(111,126,255,0.45)] text-[rgb(162,170,255)]' : 'border-[rgba(201,108,210,0.45)] text-[rgb(221,156,221)]'}`}>
+          #{safeValue}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={safeMax}
+        step={1}
+        value={safeValue}
+        onChange={(event) => onChange(Number.parseInt(event.currentTarget.value, 10))}
+        onMouseDown={(event) => event.stopPropagation()}
+        className="w-full accent-[var(--accent)]"
+      />
+      <div className="mt-2 flex justify-between text-[10px] text-[var(--text-faint)]">
+        <span>1</span>
+        <span>{safeMax}</span>
+      </div>
+    </div>
+  )
+}
+
 function NodeEditor({
   node,
   disabled,
   currentModelName,
   contextLength,
+  switchInputCount,
   onGenerate,
   onProofreadRequest,
   onChange,
@@ -2221,6 +2407,7 @@ function NodeEditor({
   disabled: boolean
   currentModelName: string | null
   contextLength: number | null
+  switchInputCount: number
   onGenerate: () => void
   onProofreadRequest: (payload: ProofreadRequestPayload) => void
   onChange: (node: GraphNodeRecord) => void
@@ -2275,9 +2462,17 @@ function NodeEditor({
       ...node,
       title: draftTitle,
       content: draftContent,
-      isLocal: draftScope === 'local'
+      isLocal: isSwitchNodeType(node.type) ? false : draftScope === 'local'
     })
     setIsEditingDetails(false)
+  }
+
+  function changeSwitchIndex(value: number) {
+    const nextContent = String(Math.max(1, Math.min(12, value)))
+    setDraftContent(nextContent)
+    if (nextContent !== node.content) {
+      onChange({ ...node, content: nextContent, isLocal: false })
+    }
   }
 
   function cancelDetailsEdit() {
@@ -2347,6 +2542,14 @@ function NodeEditor({
               </div>
             <input value={draftTitle} disabled={disabled} onChange={(event) => setDraftTitle(event.target.value)} className="w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 text-sm outline-none" />
           </label>
+          {isSwitchNodeType(node.type) ? (
+            <SwitchIndexControl
+              value={parseSwitchInputIndex(draftContent)}
+              max={getSwitchSliderMax(switchInputCount)}
+              kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+              onChange={changeSwitchIndex}
+            />
+          ) : (
           <label className="mb-4 flex min-h-0 flex-1 flex-col">
             <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Content</div>
             <div className="relative flex min-h-[16rem] flex-1">
@@ -2382,6 +2585,7 @@ function NodeEditor({
               </div>
             )}
           </label>
+          )}
           {(node.type === 'context' || node.type === 'instruction') && (
             <div className="mb-4">
               <div className="mb-2 text-sm font-medium text-[var(--text-dim)]">Scope</div>
@@ -2421,6 +2625,16 @@ function NodeEditor({
               </div>
             </div>
           </div>
+          {isSwitchNodeType(node.type) ? (
+            <div className="mb-5 px-1">
+              <SwitchIndexControl
+                value={parseSwitchInputIndex(node.content)}
+                max={getSwitchSliderMax(switchInputCount)}
+                kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+                onChange={changeSwitchIndex}
+              />
+            </div>
+          ) : (
           <div className="mb-5 flex min-h-0 flex-1 flex-col px-1">
             <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Content</div>
             <div className="relative min-h-0 flex-1">
@@ -2443,6 +2657,7 @@ function NodeEditor({
               </div>
             )}
           </div>
+          )}
           {(node.type === 'context' || node.type === 'instruction') && (
             <div className="mb-5 px-1">
               <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Scope</div>

@@ -5,7 +5,7 @@ Electron + React + React Flow を使い、プロジェクト保存には SQLite�
 
 ## 主な機能
 
-- `text` / `context` / `instruction` / `image` ノードによるグラフ編集
+- `text` / `context` / `instruction` / `image` / switch ノードによるグラフ編集
 - `text` ノード起点のストリーミング生成
 - 上流ノードをたどるコンテキスト収集
 - `context` / `instruction` の Global / Local スコープ
@@ -105,6 +105,17 @@ models/
 - 読み込み済みノードはクリックまたは `Replace image` で差し替えできます
 - 画像は横幅に合わせて、縦も切れずに全体表示されます
 - `image` ノードは Global / Local を持たず、接続先の `text` ノードにだけ作用します
+
+### context switch / instruction switch
+
+複数の `context` または `instruction` 入力から、スライダーで選んだ番号の入力だけを下流へ渡すノードです。
+
+- `Context Switch`: 左側の番号付き `CTX` ピンに `context` または `Context Switch` を接続し、右側の出力を `text` の `C` へ接続します
+- `Instruction Switch`: 左側の番号付き `INS` ピンに `instruction` または `Instruction Switch` を接続し、右側の出力を `text` の `I` へ接続します
+- index は 1 始まりです
+- 選択中の index に対応する edge は実線、それ以外の switch 入力 edge は破線で表示されます
+- 入力ピンに接続すると、次の空き入力ピンが追加表示されます
+- スライダーの最大値は接続済み入力ピンの最大 index です
 
 ## 画像入力の挙動
 
