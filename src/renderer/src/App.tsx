@@ -2016,6 +2016,8 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const imagePreviewUrl = getImagePreviewUrl(node)
   const imageDimensions = formatImageDimensions(node.image?.width, node.image?.height)
   const generationSystemPrompt = node.generationMeta?.systemPrompt?.trim() ?? ''
+  const generationUserMessage = node.generationMeta?.userMessage?.trim() ?? ''
+  const hasGenerationPromptLog = Boolean(generationSystemPrompt || generationUserMessage)
   const textHandleTop = '18%'
   const contextHandleTop = '38%'
   const instructionHandleTop = '58%'
@@ -2356,10 +2358,10 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           </div>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
-          {generationSystemPrompt && (
+          {hasGenerationPromptLog && (
             <MetaButton
               icon={<PromptIcon className="h-3.5 w-3.5" />}
-              label="System prompt"
+              label="Prompt log"
               onClick={() => setIsSystemPromptOpen((open) => !open)}
             />
           )}
@@ -2390,13 +2392,13 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           <span>{Math.round(node.size.width)} x {Math.round(node.size.height)}</span>
         </div>
       </div>
-      {isSystemPromptOpen && generationSystemPrompt && (
+      {isSystemPromptOpen && hasGenerationPromptLog && (
         <div
           className="nodrag nopan absolute bottom-5 left-5 right-5 z-20 max-h-[70%] overflow-hidden rounded-[10px] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.98)] shadow-xl shadow-black/40"
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-[var(--text-dim)]">
-            <span>System prompt</span>
+            <span>Prompt log</span>
             <button
               type="button"
               className="rounded-md px-2 py-1 text-[12px] normal-case tracking-normal text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]"
@@ -2405,9 +2407,10 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               Close
             </button>
           </div>
-          <pre className="node-scrollbar max-h-56 overflow-y-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-[11px] leading-5 text-[var(--text)]">
-            {generationSystemPrompt}
-          </pre>
+          <div className="node-scrollbar max-h-56 overflow-y-auto px-3 py-3 text-[11px]">
+            {generationSystemPrompt && <PromptLogBlock label="System" content={generationSystemPrompt} />}
+            {generationUserMessage && <PromptLogBlock label="User" content={generationUserMessage} />}
+          </div>
         </div>
       )}
     </div>
@@ -3160,10 +3163,8 @@ function GeneralInspector({
                     <span className="font-medium text-[var(--text-dim)] truncate">{log.nodeTitle}</span>
                     <span className="shrink-0 text-[var(--text-faint)]">{log.timestamp}</span>
                   </div>
-                  <div className="mb-1 text-[var(--text-faint)]">System:</div>
-                  <pre className="mb-2 whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.6] text-[var(--text-dim)]">{log.systemPrompt}</pre>
-                  <div className="mb-1 text-[var(--text-faint)]">User:</div>
-                  <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.6] text-[var(--text-dim)]">{log.userMessage}</pre>
+                  <PromptLogBlock label="System" content={log.systemPrompt} />
+                  <PromptLogBlock label="User" content={log.userMessage} />
                 </div>
               ))}
             </div>
@@ -3232,6 +3233,18 @@ function MetaButton({ icon, label, onClick }: { icon: ReactNode; label: string; 
     >
       {icon}
     </button>
+  )
+}
+
+function PromptLogBlock({ label, content }: { label: string; content: string }) {
+  return (
+    <div className="mb-2 last:mb-0">
+      <div className="mb-1 flex items-center justify-between gap-2 text-[var(--text-faint)]">
+        <span>{label}:</span>
+        <span className="shrink-0 tabular-nums">{content.length} chars</span>
+      </div>
+      <pre className="min-h-0 whitespace-pre-wrap break-words rounded-[6px] border border-[var(--border)] bg-[rgba(0,0,0,0.12)] px-2 py-2 font-mono text-[10px] leading-[1.6] text-[var(--text-dim)]">{content}</pre>
+    </div>
   )
 }
 

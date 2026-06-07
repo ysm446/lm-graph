@@ -30,6 +30,7 @@ export interface GenerationMeta {
   durationSeconds: number | null
   finishReason: string | null
   systemPrompt?: string | null
+  userMessage?: string | null
 }
 
 export interface GraphNodeRecord {

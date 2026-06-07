@@ -514,7 +514,8 @@ async function streamGeneration(input: {
       totalTokens,
       durationMs: Date.now() - startedAt,
       finishReason,
-      systemPrompt: input.systemPrompt
+      systemPrompt: input.systemPrompt,
+      userMessage
     })
     if (input.persistToRepository) {
       repository.updateNode({
@@ -550,7 +551,7 @@ function updateSnapshotNode(snapshot: ProjectSnapshot, nodeId: string, patch: Pa
     nodes: snapshot.nodes.map((node) => node.id === nodeId ? { ...node, ...patch, updatedAt: new Date().toISOString() } : node)
   }
 }
-function buildGenerationMeta(input: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null; durationMs: number; finishReason: string | null; systemPrompt: string }) {
+function buildGenerationMeta(input: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null; durationMs: number; finishReason: string | null; systemPrompt: string; userMessage: string }) {
   const durationSeconds = input.durationMs > 0 ? Number((input.durationMs / 1000).toFixed(2)) : null
   const tokensPerSecond =
     input.completionTokens !== null && durationSeconds && durationSeconds > 0
@@ -564,12 +565,12 @@ function buildGenerationMeta(input: { promptTokens: number | null; completionTok
     tokensPerSecond,
     durationSeconds,
     finishReason: input.finishReason,
-    systemPrompt: input.systemPrompt
+    systemPrompt: input.systemPrompt,
+    userMessage: input.userMessage
   }
 }
 function collectContext(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEdgeRecord[]) {
   const nodeMap = new Map(nodes.map((node) => [node.id, node]))
-  const self = nodeMap.get(nodeId)
   const directTextParents = getHandleParents(nodeId, 'text', edges, nodeMap)
   const directContextParents = getHandleParents(nodeId, 'context', edges, nodeMap)
   const directInstructionParents = getHandleParents(nodeId, 'instruction', edges, nodeMap)
@@ -606,28 +607,25 @@ function collectContext(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEd
     .filter(Boolean)
   const directParentTexts = directTextParents
     .filter((node) => node.content.trim())
-    .map((node, index) => `# Direct Parent Text ${index + 1}${node.title ? `: ${node.title}` : ''}
+    .map((node, index) => `# Direct Parent Text ${index + 1}
 ${node.content.trim()}`)
   const upstreamTextParts = upstreamTexts
     .filter((node) => node.content.trim())
-    .map((node, index) => `# Upstream Text ${index + 1}${node.title ? `: ${node.title}` : ''}
+    .map((node, index) => `# Upstream Text ${index + 1}
 ${node.content.trim()}`)
   const contextParts = [
     ...directContextParents,
     ...upstreamGlobalContexts
   ].filter((node) => node.content.trim())
-    .map((node, index) => `# ${node.isLocal ? 'Local Context' : 'Context'} ${index + 1}${node.title ? `: ${node.title}` : ''}
+    .map((node, index) => `# ${node.isLocal ? 'Local Context' : 'Context'} ${index + 1}
 ${node.content.trim()}`)
   const imageParts = directImageParents.map((node, index) => {
     const imageInfo = node.image
     const fileLabel = imageInfo?.originalName ? ` (file: ${imageInfo.originalName})` : ''
     const sizeLabel = imageInfo?.width && imageInfo?.height ? `, ${imageInfo.width} x ${imageInfo.height}` : ''
-    return `# Image ${index + 1}${node.title ? `: ${node.title}` : ''}${fileLabel}${sizeLabel}`
+    return `# Image ${index + 1}${fileLabel}${sizeLabel}`
   })
-  const targetInfo = self
-    ? `# Target Node${self.title ? `: ${self.title}` : ''}
-Write the final content for this target node.`
-    : `# Target Node
+  const targetInfo = `# Target Node
 Write the final content for this target node.`
 
   return {
