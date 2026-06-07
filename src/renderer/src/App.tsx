@@ -370,6 +370,7 @@ function GraphChatApp() {
   useEffect(() => {
     const offDelta = window.graphChat.onGenerationDelta(({ nodeId, content }) => {
       setLiveGenerationContent({ nodeId, content })
+      applyLiveGenerationContent(nodeId, content)
     })
     const offDone = window.graphChat.onGenerationDone(({ snapshot, projects }) => {
       setProjects(projects)
@@ -542,6 +543,38 @@ function GraphChatApp() {
 
   function selectNode(nodeId: string | null) {
     setSelectedNodes(nodeId ? [nodeId] : [])
+  }
+
+  function applyLiveGenerationContent(nodeId: string, content: string) {
+    const currentSnapshot = snapshotRef.current
+    if (currentSnapshot) {
+      snapshotRef.current = {
+        ...currentSnapshot,
+        nodes: currentSnapshot.nodes.map((node) =>
+          node.id === nodeId
+            ? { ...node, content, isGenerated: true }
+            : node
+        )
+      }
+    }
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId) return node
+        const graphNode = node.data.graphNode
+        if (graphNode.content === content && graphNode.isGenerated) return node
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            graphNode: {
+              ...graphNode,
+              content,
+              isGenerated: true
+            }
+          }
+        }
+      })
+    )
   }
 
   function applySnapshot(snapshot: ProjectSnapshot) {
