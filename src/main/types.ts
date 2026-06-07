@@ -29,6 +29,7 @@ export interface GenerationMeta {
   tokensPerSecond: number | null
   durationSeconds: number | null
   finishReason: string | null
+  systemPrompt?: string | null
 }
 
 export interface GraphNodeRecord {

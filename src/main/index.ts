@@ -513,7 +513,8 @@ async function streamGeneration(input: {
       completionTokens,
       totalTokens,
       durationMs: Date.now() - startedAt,
-      finishReason
+      finishReason,
+      systemPrompt: input.systemPrompt
     })
     if (input.persistToRepository) {
       repository.updateNode({
@@ -549,7 +550,7 @@ function updateSnapshotNode(snapshot: ProjectSnapshot, nodeId: string, patch: Pa
     nodes: snapshot.nodes.map((node) => node.id === nodeId ? { ...node, ...patch, updatedAt: new Date().toISOString() } : node)
   }
 }
-function buildGenerationMeta(input: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null; durationMs: number; finishReason: string | null }) {
+function buildGenerationMeta(input: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null; durationMs: number; finishReason: string | null; systemPrompt: string }) {
   const durationSeconds = input.durationMs > 0 ? Number((input.durationMs / 1000).toFixed(2)) : null
   const tokensPerSecond =
     input.completionTokens !== null && durationSeconds && durationSeconds > 0
@@ -562,7 +563,8 @@ function buildGenerationMeta(input: { promptTokens: number | null; completionTok
     totalTokens: input.totalTokens ?? ((input.promptTokens !== null && input.completionTokens !== null) ? input.promptTokens + input.completionTokens : null),
     tokensPerSecond,
     durationSeconds,
-    finishReason: input.finishReason
+    finishReason: input.finishReason,
+    systemPrompt: input.systemPrompt
   }
 }
 function collectContext(nodeId: string, nodes: GraphNodeRecord[], edges: GraphEdgeRecord[]) {

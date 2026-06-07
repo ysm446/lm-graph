@@ -135,6 +135,8 @@ type CopiedSelection = {
   edges: GraphEdgeRecord[]
 }
 
+const LIVE_GENERATION_CONTENT_EVENT = 'lm-graph:generation-content'
+
 type ResizeSide = 'left' | 'right'
 
 
@@ -370,7 +372,7 @@ function GraphChatApp() {
   useEffect(() => {
     const offDelta = window.graphChat.onGenerationDelta(({ nodeId, content }) => {
       setLiveGenerationContent({ nodeId, content })
-      applyLiveGenerationContent(nodeId, content)
+      window.dispatchEvent(new CustomEvent(LIVE_GENERATION_CONTENT_EVENT, { detail: { nodeId, content } }))
     })
     const offDone = window.graphChat.onGenerationDone(({ snapshot, projects }) => {
       setProjects(projects)
@@ -543,38 +545,6 @@ function GraphChatApp() {
 
   function selectNode(nodeId: string | null) {
     setSelectedNodes(nodeId ? [nodeId] : [])
-  }
-
-  function applyLiveGenerationContent(nodeId: string, content: string) {
-    const currentSnapshot = snapshotRef.current
-    if (currentSnapshot) {
-      snapshotRef.current = {
-        ...currentSnapshot,
-        nodes: currentSnapshot.nodes.map((node) =>
-          node.id === nodeId
-            ? { ...node, content, isGenerated: true }
-            : node
-        )
-      }
-    }
-    setNodes((current) =>
-      current.map((node) => {
-        if (node.id !== nodeId) return node
-        const graphNode = node.data.graphNode
-        if (graphNode.content === content && graphNode.isGenerated) return node
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            graphNode: {
-              ...graphNode,
-              content,
-              isGenerated: true
-            }
-          }
-        }
-      })
-    )
   }
 
   function applySnapshot(snapshot: ProjectSnapshot) {
@@ -2015,10 +1985,13 @@ function ExternalNodeTitle({ title }: { title: string }) {
 }
 
 function GraphNodeCard({ data }: { data: AppNodeData }) {
-  const node = data.graphNode
-  const [draftTitle, setDraftTitle] = useState(node.title)
-  const [draftContent, setDraftContent] = useState(node.content)
+  const sourceNode = data.graphNode
+  const [streamedContent, setStreamedContent] = useState<string | null>(null)
+  const node = streamedContent !== null ? { ...sourceNode, content: streamedContent, isGenerated: true } : sourceNode
+  const [draftTitle, setDraftTitle] = useState(sourceNode.title)
+  const [draftContent, setDraftContent] = useState(sourceNode.content)
   const [selectionProofreadAction, setSelectionProofreadAction] = useState<SelectionProofreadAction | null>(null)
+  const [isSystemPromptOpen, setIsSystemPromptOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
   const wasEditingRef = useRef(data.isEditing)
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -2042,17 +2015,34 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   } as const
   const imagePreviewUrl = getImagePreviewUrl(node)
   const imageDimensions = formatImageDimensions(node.image?.width, node.image?.height)
+  const generationSystemPrompt = node.generationMeta?.systemPrompt?.trim() ?? ''
   const textHandleTop = '18%'
   const contextHandleTop = '38%'
   const instructionHandleTop = '58%'
   const imageHandleTop = '78%'
 
   useEffect(() => {
-    if (node.id !== data.graphNode.id) return
-    setDraftTitle(node.title)
-    setDraftContent(node.content)
+    if (sourceNode.id !== data.graphNode.id) return
+    setDraftTitle(sourceNode.title)
+    setDraftContent(sourceNode.content)
     wasEditingRef.current = data.isEditing
-  }, [node.id, node.title, node.content, data.isEditing])
+  }, [sourceNode.id, sourceNode.title, sourceNode.content, data.isEditing])
+
+  useEffect(() => {
+    const handleLiveGenerationContent = (event: Event) => {
+      const detail = (event as CustomEvent<{ nodeId: string; content: string }>).detail
+      if (!detail || detail.nodeId !== sourceNode.id) return
+      setStreamedContent(detail.content)
+    }
+    window.addEventListener(LIVE_GENERATION_CONTENT_EVENT, handleLiveGenerationContent)
+    return () => window.removeEventListener(LIVE_GENERATION_CONTENT_EVENT, handleLiveGenerationContent)
+  }, [sourceNode.id])
+
+  useEffect(() => {
+    if (!data.isGenerating) {
+      setStreamedContent(null)
+    }
+  }, [data.isGenerating, sourceNode.id])
 
   useEffect(() => {
     if (data.isEditing && !wasEditingRef.current) {
@@ -2366,6 +2356,13 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           </div>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
+          {generationSystemPrompt && (
+            <MetaButton
+              icon={<PromptIcon className="h-3.5 w-3.5" />}
+              label="System prompt"
+              onClick={() => setIsSystemPromptOpen((open) => !open)}
+            />
+          )}
           {node.generationMeta?.completionTokens != null && <MetaItem icon={<MessageIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} tokens`} />}
           {node.generationMeta?.tokensPerSecond != null && <MetaItem icon={<BoltIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.tokensPerSecond.toFixed(1)} tok/s`} />}
           {node.generationMeta?.durationSeconds != null && <MetaItem icon={<ClockIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.durationSeconds.toFixed(2)}s`} />}
@@ -2393,6 +2390,26 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           <span>{Math.round(node.size.width)} x {Math.round(node.size.height)}</span>
         </div>
       </div>
+      {isSystemPromptOpen && generationSystemPrompt && (
+        <div
+          className="nodrag nopan absolute bottom-5 left-5 right-5 z-20 max-h-[70%] overflow-hidden rounded-[10px] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.98)] shadow-xl shadow-black/40"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-[var(--text-dim)]">
+            <span>System prompt</span>
+            <button
+              type="button"
+              className="rounded-md px-2 py-1 text-[12px] normal-case tracking-normal text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]"
+              onClick={() => setIsSystemPromptOpen(false)}
+            >
+              Close
+            </button>
+          </div>
+          <pre className="node-scrollbar max-h-56 overflow-y-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-[11px] leading-5 text-[var(--text)]">
+            {generationSystemPrompt}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }
@@ -2426,7 +2443,7 @@ function SwitchIndexControl({
         value={safeValue}
         onChange={(event) => onChange(Number.parseInt(event.currentTarget.value, 10))}
         onMouseDown={(event) => event.stopPropagation()}
-        className="w-full accent-[var(--accent)]"
+        className="graph-slider w-full"
       />
       <div className="mt-2 flex justify-between text-[10px] text-[var(--text-faint)]">
         <span>1</span>
@@ -3196,6 +3213,28 @@ function MetaItem({ icon, label }: { icon: ReactNode; label: string }) {
   return <span className="inline-flex items-center gap-1.5">{icon}<span>{label}</span></span>
 }
 
+function MetaButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="nodrag nopan inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[var(--text-dim)] transition hover:bg-white/5 hover:text-[var(--text)]"
+      title={label}
+      aria-label={label}
+      onMouseDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onClick()
+      }}
+    >
+      {icon}
+    </button>
+  )
+}
+
 function ContextUsageGauge({ percent }: { percent: number }) {
   const normalizedPercent = Math.max(0, Math.min(percent, 100))
   const radius = 9
@@ -3363,6 +3402,17 @@ function MessageIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
       <path d="M7 18.5 3.5 21V6.5A2.5 2.5 0 0 1 6 4h12a2.5 2.5 0 0 1 2.5 2.5v8A2.5 2.5 0 0 1 18 17H9.5L7 18.5Z" />
+    </svg>
+  )
+}
+
+function PromptIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+      <path d="M15 16.5 17 18l2-1.5" />
     </svg>
   )
 }
