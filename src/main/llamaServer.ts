@@ -9,6 +9,7 @@ import type { AppSettings, ModelMetadata, ModelOption } from './types'
 const DEFAULT_PORT = 8080
 const DEFAULT_CONTEXT_LENGTH = 32768
 const DEFAULT_TEMPERATURE = 0.8
+const PREFERRED_LLAMA_SERVER_DIR = 'b9496-win-cuda13-x64'
 
 export class LlamaServerManager {
   private process: ChildProcessWithoutNullStreams | null = null
@@ -424,6 +425,9 @@ function compareServerCandidates(left: string, right: string): number {
   const leftScore = getServerCandidateScore(left)
   const rightScore = getServerCandidateScore(right)
 
+  if (leftScore.preferred !== rightScore.preferred) {
+    return rightScore.preferred - leftScore.preferred
+  }
   if (leftScore.build !== rightScore.build) {
     return rightScore.build - leftScore.build
   }
@@ -433,10 +437,11 @@ function compareServerCandidates(left: string, right: string): number {
   return left.localeCompare(right)
 }
 
-function getServerCandidateScore(serverPath: string): { build: number; mtimeMs: number } {
+function getServerCandidateScore(serverPath: string): { preferred: number; build: number; mtimeMs: number } {
   const parentDirName = basename(dirname(serverPath))
   const buildMatch = parentDirName.match(/(?:^|[^0-9])b(\d+)(?:[^0-9]|$)/i)
   return {
+    preferred: parentDirName.toLowerCase() === PREFERRED_LLAMA_SERVER_DIR ? 1 : 0,
     build: buildMatch ? Number.parseInt(buildMatch[1], 10) : -1,
     mtimeMs: statSync(serverPath).mtimeMs
   }
