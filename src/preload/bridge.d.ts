@@ -7,6 +7,7 @@ export interface GraphChatApi {
   ejectModel(): Promise<{ settings: AppSettings }>
   updateSettings(input: { contextLength?: number; temperature?: number }): Promise<{ settings: AppSettings }>
   savePreferences(input: Partial<UiPreferences>): Promise<{ uiPreferences: UiPreferences }>
+  resetWindowSize(): Promise<{ ok: boolean; width?: number; height?: number }>
   setProjectDirty(isDirty: boolean): Promise<{ ok: true }>
   createProject(name: string): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot }>
   renameProject(id: string, name: string): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot }>

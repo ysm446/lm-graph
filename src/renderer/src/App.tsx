@@ -1901,6 +1901,16 @@ function GraphChatApp() {
               onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
               onToggleSnapToGrid={toggleSnapToGrid}
               onChangeEdgeType={setEdgeType}
+              onResetWindowSize={() => {
+                void window.graphChat
+                  .resetWindowSize()
+                  .then((result) => {
+                    setStatus(result.ok && result.width && result.height ? `Content area reset to ${result.width} x ${result.height}` : 'Window size reset failed')
+                  })
+                  .catch((error: unknown) => {
+                    setStatus(error instanceof Error ? error.message : 'Window size reset failed')
+                  })
+              }}
               onToggleProofread={() => setIsProofreadEnabled((current) => !current)}
               onChangeTextStyleTarget={setTextStyleTarget}
               onChangeTextStylePreset={(value) => {
@@ -2789,6 +2799,7 @@ function GeneralInspector({
   onToggleMiniMap,
   onToggleSnapToGrid,
   onChangeEdgeType,
+  onResetWindowSize,
   onToggleProofread,
   onChangeProofreadPreset,
   onChangeTextStyleTarget,
@@ -2822,6 +2833,7 @@ function GeneralInspector({
   onToggleMiniMap: () => void
   onToggleSnapToGrid: () => void
   onChangeEdgeType: (value: 'default' | 'smoothstep' | 'step') => void
+  onResetWindowSize: () => void
   onToggleProofread: () => void
   onChangeProofreadPreset: (value: ProofreadPreset) => void
   onChangeTextStyleTarget: (value: TextStyleTarget) => void
@@ -3004,6 +3016,22 @@ function GeneralInspector({
             <option value="smoothstep">Smooth Step</option>
             <option value="step">Step</option>
           </select>
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] text-[var(--text-dim)]">Content Area</div>
+            <div className="mt-0.5 text-[11px] text-[var(--text-faint)]">Reset to 1920 x 1080</div>
+          </div>
+          <button
+            type="button"
+            aria-label="Reset window size"
+            title="Reset window size"
+            onClick={onResetWindowSize}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-2.5 text-[12px] text-[var(--text)] transition hover:border-[var(--accent-border)] hover:bg-white/5"
+          >
+            <SidebarToggleIcon className="h-3.5 w-3.5" />
+            Reset
+          </button>
         </div>
       </InspectorSection>
 

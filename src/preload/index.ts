@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('graphChat', {
   ejectModel: () => ipcRenderer.invoke('models:eject'),
   updateSettings: (input) => ipcRenderer.invoke('settings:update', input),
   savePreferences: (input) => ipcRenderer.invoke('preferences:save', input),
+  resetWindowSize: () => ipcRenderer.invoke('window:resetSize'),
   setProjectDirty: (isDirty: boolean) => ipcRenderer.invoke('project:setDirty', isDirty),
   createProject: (name: string) => ipcRenderer.invoke('project:create', name),
   renameProject: (id: string, name: string) => ipcRenderer.invoke('project:rename', id, name),

@@ -110,6 +110,8 @@ function startSystemResourcePolling(): void {
 
 const generationControllers = new Map<string, AbortController>()
 const proofreadControllers = new Map<string, AbortController>()
+const DEFAULT_CONTENT_WIDTH = 1920
+const DEFAULT_CONTENT_HEIGHT = 1080
 let repository: GraphRepository | null = null
 let llamaServer: LlamaServerManager | null = null
 let preferencesPath = ''
@@ -168,8 +170,9 @@ function getLlamaServer(): LlamaServerManager {
 function createWindow(): void {
   const iconPath = resolveIconPath()
   const window = new BrowserWindow({
-    width: 1800,
-    height: 1000,
+    width: DEFAULT_CONTENT_WIDTH,
+    height: DEFAULT_CONTENT_HEIGHT,
+    useContentSize: true,
     minWidth: 1200,
     minHeight: 800,
     backgroundColor: '#d8d1c5',
@@ -276,6 +279,15 @@ function registerIpc(): void {
   ipcMain.handle('preferences:save', async (_event, input: Partial<UiPreferences>) => {
     const uiPreferences = await saveUiPreferences(input)
     return { uiPreferences }
+  })
+  ipcMain.handle('window:resetSize', async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return { ok: false as const }
+    if (window.isMaximized()) window.unmaximize()
+    if (window.isFullScreen()) window.setFullScreen(false)
+    window.setContentSize(DEFAULT_CONTENT_WIDTH, DEFAULT_CONTENT_HEIGHT)
+    window.center()
+    return { ok: true as const, width: DEFAULT_CONTENT_WIDTH, height: DEFAULT_CONTENT_HEIGHT }
   })
   ipcMain.handle('project:setDirty', async (_event, isDirty: boolean) => {
     hasUnsavedChanges = isDirty
