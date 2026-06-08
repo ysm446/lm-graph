@@ -1355,9 +1355,21 @@ function GraphChatApp() {
       if (wheelRafRef.current === null) wheelRafRef.current = requestAnimationFrame(animate)
     }
 
+    // A native drag-pan must take over immediately, so stop any in-flight wheel easing
+    // (otherwise each frame yanks the viewport back toward the stale zoom target).
+    const cancelEasing = () => {
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current)
+        wheelRafRef.current = null
+      }
+      targetViewportRef.current = null
+    }
+
     el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('pointerdown', cancelEasing)
     return () => {
       el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('pointerdown', cancelEasing)
       if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current)
       wheelRafRef.current = null
       targetViewportRef.current = null
