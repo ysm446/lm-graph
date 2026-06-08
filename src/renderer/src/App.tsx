@@ -230,6 +230,8 @@ function GraphChatApp() {
   const hasLoadedPreferencesRef = useRef(false)
   const resizeStateRef = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null)
   const projectViewportsRef = useRef<Record<string, Viewport>>({})
+  const targetViewportRef = useRef<Viewport | null>(null)
+  const wheelRafRef = useRef<number | null>(null)
 
   activeProjectIdRef.current = activeProjectId
   generationRef.current = generation
@@ -1293,6 +1295,76 @@ function GraphChatApp() {
     void window.graphChat.savePreferences({ projectViewports: projectViewportsRef.current })
   }
 
+  // Smoothly ease scroll-driven zoom/pan toward a target viewport instead of snapping instantly.
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+
+    const SMOOTHING = 0.16 // per-frame lerp factor (lower = more lag)
+    const ZOOM_SENSITIVITY = 0.0015
+    const PAN_SENSITIVITY = 1
+
+    const animate = () => {
+      const target = targetViewportRef.current
+      if (!target) {
+        wheelRafRef.current = null
+        return
+      }
+      const current = reactFlow.getViewport()
+      const nx = current.x + (target.x - current.x) * SMOOTHING
+      const ny = current.y + (target.y - current.y) * SMOOTHING
+      const nz = current.zoom + (target.zoom - current.zoom) * SMOOTHING
+      const settled =
+        Math.abs(target.x - nx) < 0.1 && Math.abs(target.y - ny) < 0.1 && Math.abs(target.zoom - nz) < 0.0005
+      if (settled) {
+        reactFlow.setViewport(target)
+        handleMoveEnd(null, target)
+        targetViewportRef.current = null
+        wheelRafRef.current = null
+        return
+      }
+      reactFlow.setViewport({ x: nx, y: ny, zoom: nz })
+      wheelRafRef.current = requestAnimationFrame(animate)
+    }
+
+    const onWheel = (event: WheelEvent) => {
+      // Let scrollable areas (node editors, overlays) keep their native wheel behavior.
+      if ((event.target as HTMLElement | null)?.closest('.nowheel')) return
+      event.preventDefault()
+
+      const bounds = el.getBoundingClientRect()
+      const pointer = { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
+      const base = targetViewportRef.current ?? reactFlow.getViewport()
+
+      if (event.ctrlKey || !event.shiftKey) {
+        // Zoom toward the cursor (ctrl+wheel / pinch, or plain wheel).
+        const factor = Math.exp(-event.deltaY * ZOOM_SENSITIVITY)
+        const newZoom = Math.min(2, Math.max(0.1, base.zoom * factor))
+        const flowX = (pointer.x - base.x) / base.zoom
+        const flowY = (pointer.y - base.y) / base.zoom
+        targetViewportRef.current = { x: pointer.x - flowX * newZoom, y: pointer.y - flowY * newZoom, zoom: newZoom }
+      } else {
+        // Shift+wheel pans horizontally.
+        targetViewportRef.current = {
+          x: base.x - event.deltaY * PAN_SENSITIVITY,
+          y: base.y - event.deltaX * PAN_SENSITIVITY,
+          zoom: base.zoom
+        }
+      }
+
+      if (wheelRafRef.current === null) wheelRafRef.current = requestAnimationFrame(animate)
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current)
+      wheelRafRef.current = null
+      targetViewportRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reactFlow])
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (proofreadRef.current) {
@@ -1799,6 +1871,8 @@ function GraphChatApp() {
           minZoom={0.1}
           maxZoom={2}
           defaultViewport={projectViewportsRef.current[activeProjectId] ?? { x: 0, y: 0, zoom: 1 }}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
           panOnDrag={[1]}
           selectionOnDrag
           selectionMode={SelectionMode.Partial}
