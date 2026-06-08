@@ -69,6 +69,8 @@ type AppNodeData = {
   isSelected: boolean
   isEditing: boolean
   isGenerating: boolean
+  isProofreadEnabled: boolean
+  isModelLoaded: boolean
   switchInputCount: number
   onSelect: (id: string) => void
   onChange: (node: GraphNodeRecord) => void
@@ -77,7 +79,7 @@ type AppNodeData = {
   onGenerate: (id: string) => void
   onPickImage: (id: string) => void
   onOpenImagePreview: (node: GraphNodeRecord) => void
-  onProofreadRequest: (payload: ProofreadRequestPayload) => void
+  onProofreadRequest: (payload: ProofreadRequestPayload) => boolean
   onResize: (id: string, input: { position: { x: number; y: number }; size: { width: number; height: number } }) => void
 }
 
@@ -321,13 +323,19 @@ function GraphChatApp() {
       let changed = false
       const next = current.map((node) => {
         const isGenerating = generation?.nodeId === node.id
-        if (node.data.isGenerating === isGenerating) return node
+        if (
+          node.data.isGenerating === isGenerating &&
+          node.data.isProofreadEnabled === isProofreadEnabled &&
+          node.data.isModelLoaded === isModelLoaded
+        ) {
+          return node
+        }
         changed = true
-        return { ...node, data: { ...node.data, isGenerating } }
+        return { ...node, data: { ...node.data, isGenerating, isProofreadEnabled, isModelLoaded } }
       })
       return changed ? next : current
     })
-  }, [generation])
+  }, [generation, isProofreadEnabled, isModelLoaded])
 
   useEffect(() => {
     setEdges((current) => {
@@ -409,8 +417,10 @@ function GraphChatApp() {
     const offProofreadDone = window.graphChat.onProofreadDone(({ proofreadId, content }) => {
       setProofread((current) => current?.proofreadId === proofreadId ? { ...current, correctedText: content, isStreaming: false } : current)
     })
-    const offProofreadError = window.graphChat.onProofreadError(({ proofreadId }) => {
+    const offProofreadError = window.graphChat.onProofreadError(({ proofreadId, message }) => {
       setProofread((current) => current?.proofreadId === proofreadId ? null : current)
+      setError(message)
+      setStatus('Proofread failed')
     })
     const offPromptLog = window.graphChat.onPromptLog(({ generationId, nodeTitle, systemPrompt, userMessage }) => {
       setPromptLogs((current) => {
@@ -496,6 +506,12 @@ function GraphChatApp() {
   }, [selectedNodeIds, editingNodeId])
 
   const activeProofreadPrompt = proofreadPreset === 'custom' ? (proofreadSystemPrompt.trim() || DEFAULT_PROOFREAD_SYSTEM_PROMPT) : PROOFREAD_PRESETS[proofreadPreset].prompt
+  const isProofreadEnabledRef = useRef(isProofreadEnabled)
+  const isModelLoadedRef = useRef(isModelLoaded)
+  const activeProofreadPromptRef = useRef(activeProofreadPrompt)
+  isProofreadEnabledRef.current = isProofreadEnabled
+  isModelLoadedRef.current = isModelLoaded
+  activeProofreadPromptRef.current = activeProofreadPrompt
 
   const selectedNode = useMemo(() => selectedNodeIds.length === 1 ? snapshotRef.current?.nodes.find((node) => node.id === selectedNodeIds[0]) ?? null : null, [selectedNodeIds, nodes])
   const selectedNodeForDetails = useMemo(() => {
@@ -591,6 +607,8 @@ function GraphChatApp() {
         isSelected: selectedNodeIds.includes(node.id),
         isEditing: node.id === editingNodeId,
         isGenerating: generationRef.current?.nodeId === node.id,
+        isProofreadEnabled,
+        isModelLoaded,
         switchInputCount: switchInputCounts.get(node.id) ?? 0,
         onSelect: selectNode,
         onChange: (updated) => {
@@ -957,17 +975,25 @@ function GraphChatApp() {
     setStatus('Generation stopped')
   }
 
-  function handleProofreadRequest(payload: ProofreadRequestPayload) {
-    if (!isProofreadEnabled || !isModelLoaded) return
+  function handleProofreadRequest(payload: ProofreadRequestPayload): boolean {
+    if (!isProofreadEnabledRef.current) {
+      setStatus('Proofread is disabled')
+      return false
+    }
+    if (!isModelLoadedRef.current) {
+      setStatus('Load a model before proofreading')
+      return false
+    }
     if (proofreadRef.current) {
       void window.graphChat.stopProofread(proofreadRef.current.proofreadId)
     }
     const popupWidth = 320
     const popupGap = 12
     const top = Math.max(16, Math.min(payload.rect.top, window.innerHeight - 220))
-    const left = payload.side === 'left'
+    const rawLeft = payload.side === 'left'
       ? Math.max(16, payload.rect.left - popupWidth - popupGap)
       : Math.min(window.innerWidth - popupWidth - 16, payload.rect.right + popupGap)
+    const left = Math.max(16, Math.min(rawLeft, window.innerWidth - popupWidth - 16))
     const proofreadId = crypto.randomUUID()
     setProofread({
       proofreadId,
@@ -981,7 +1007,9 @@ function GraphChatApp() {
       position: { top, left },
       onApply: payload.onApply
     })
-    void window.graphChat.startProofread(proofreadId, payload.text, activeProofreadPrompt)
+    setStatus('Proofreading...')
+    void window.graphChat.startProofread(proofreadId, payload.text, activeProofreadPromptRef.current)
+    return true
   }
 
   function acceptProofread() {
@@ -1949,6 +1977,8 @@ function GraphChatApp() {
                 currentModelName={isModelLoaded ? (settings?.selectedModelName ?? null) : null}
                 contextLength={settings?.contextLength ?? null}
                 switchInputCount={selectedSwitchInputCount}
+                isProofreadEnabled={isProofreadEnabled}
+                isModelLoaded={isModelLoaded}
                 onGenerate={() => void handleGenerate(selectedNodeForDetails.id)}
                 onProofreadRequest={handleProofreadRequest}
                 onChange={(updated) => {
@@ -2092,6 +2122,9 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
   const wasEditingRef = useRef(data.isEditing)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const proofreadUnavailableReason = !data.isProofreadEnabled
+    ? 'Proofread is disabled'
+    : (!data.isModelLoaded ? 'Load a model before proofreading' : null)
   const borderStyle = node.type === 'text' || node.type === 'image' || !node.isLocal ? 'border-solid' : 'border-dashed'
   const colors = {
     text: 'border-[#6b7280] bg-[var(--bg-card)]',
@@ -2344,7 +2377,17 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                       selectionStart,
                       selectionEnd,
                       fullContent: el.value,
-                      rect
+                      rect,
+                      onApply: (nextContent) => {
+                        setDraftContent(nextContent)
+                        window.requestAnimationFrame(() => {
+                          const textarea = textareaRef.current
+                          if (!textarea) return
+                          textarea.focus()
+                          textarea.selectionStart = selectionStart
+                          textarea.selectionEnd = selectionStart + (nextContent.length - (el.value.length - (selectionEnd - selectionStart)))
+                        })
+                      }
                     }
                   })
                 }}
@@ -2356,7 +2399,13 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               {selectionProofreadAction && (
                 <button
                   type="button"
-                  className="absolute right-3 top-3 nodrag nopan rounded-full border border-[var(--accent-border)] bg-[var(--accent)] px-3 py-1 text-[12px] font-medium text-white shadow-lg transition hover:bg-[var(--accent-hover)]"
+                  disabled={Boolean(proofreadUnavailableReason)}
+                  title={proofreadUnavailableReason ?? 'Proofread selection'}
+                  className={`absolute right-3 top-3 nodrag nopan rounded-full border px-3 py-1 text-[12px] font-medium shadow-lg transition ${
+                    proofreadUnavailableReason
+                      ? 'cursor-not-allowed border-[var(--border-strong)] bg-[var(--bg-input)] text-[var(--text-dim)]'
+                      : 'border-[var(--accent-border)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]'
+                  }`}
                   onMouseDown={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -2364,8 +2413,10 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    setSelectionProofreadAction(null)
-                    data.onProofreadRequest(selectionProofreadAction.payload)
+                    if (proofreadUnavailableReason) return
+                    if (data.onProofreadRequest(selectionProofreadAction.payload)) {
+                      setSelectionProofreadAction(null)
+                    }
                   }}
                 >
                   校正
@@ -2564,6 +2615,8 @@ function NodeEditor({
   currentModelName,
   contextLength,
   switchInputCount,
+  isProofreadEnabled,
+  isModelLoaded,
   onGenerate,
   onProofreadRequest,
   onChange,
@@ -2575,8 +2628,10 @@ function NodeEditor({
   currentModelName: string | null
   contextLength: number | null
   switchInputCount: number
+  isProofreadEnabled: boolean
+  isModelLoaded: boolean
   onGenerate: () => void
-  onProofreadRequest: (payload: ProofreadRequestPayload) => void
+  onProofreadRequest: (payload: ProofreadRequestPayload) => boolean
   onChange: (node: GraphNodeRecord) => void
   onDuplicate: () => void
   onDelete: () => void
@@ -2602,6 +2657,9 @@ function NodeEditor({
   const [selectionProofreadAction, setSelectionProofreadAction] = useState<SelectionProofreadAction | null>(null)
   const [showTopFade, setShowTopFade] = useState(false)
   const [showBottomFade, setShowBottomFade] = useState(false)
+  const proofreadUnavailableReason = !isProofreadEnabled
+    ? 'Proofread is disabled'
+    : (!isModelLoaded ? 'Load a model before proofreading' : null)
 
   useEffect(() => {
     setDraftTitle(node.title)
@@ -2734,11 +2792,19 @@ function NodeEditor({
               {selectionProofreadAction && (
                 <button
                   type="button"
-                  className="absolute right-3 top-3 rounded-full border border-[var(--accent-border)] bg-[var(--accent)] px-3 py-1 text-[12px] font-medium text-white shadow-lg transition hover:bg-[var(--accent-hover)]"
+                  disabled={Boolean(proofreadUnavailableReason)}
+                  title={proofreadUnavailableReason ?? 'Proofread selection'}
+                  className={`absolute right-3 top-3 rounded-full border px-3 py-1 text-[12px] font-medium shadow-lg transition ${
+                    proofreadUnavailableReason
+                      ? 'cursor-not-allowed border-[var(--border-strong)] bg-[var(--bg-input)] text-[var(--text-dim)]'
+                      : 'border-[var(--accent-border)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]'
+                  }`}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
-                    setSelectionProofreadAction(null)
-                    onProofreadRequest(selectionProofreadAction.payload)
+                    if (proofreadUnavailableReason) return
+                    if (onProofreadRequest(selectionProofreadAction.payload)) {
+                      setSelectionProofreadAction(null)
+                    }
                   }}
                 >
                   校正
