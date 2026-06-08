@@ -597,7 +597,7 @@ function GraphChatApp() {
         },
         onStartEdit: (id) => {
           selectNode(id)
-          setEditingNodeId(id)
+          window.requestAnimationFrame(() => setEditingNodeId(id))
         },
         onStopEdit: () => setEditingNodeId(null),
         onGenerate: (id: string) => handleGenerateRef.current(id),
@@ -2176,6 +2176,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 commitDraft()
                 data.onStopEdit()
               } else {
+                data.onSelect(node.id)
                 data.onStartEdit(node.id)
               }
             }}
@@ -2386,6 +2387,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 commitDraft()
                 data.onStopEdit()
               } else {
+                data.onSelect(node.id)
                 data.onStartEdit(node.id)
               }
             }}>
@@ -2397,20 +2399,21 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
       </div>
       {isSystemPromptOpen && hasGenerationPromptLog && (
         <div
-          className="nodrag nopan absolute bottom-5 left-5 right-5 z-20 max-h-[70%] overflow-hidden rounded-[10px] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.98)] shadow-xl shadow-black/40"
+          className="nodrag nopan nowheel absolute inset-5 z-20 flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-[var(--border-strong)] bg-[rgba(17,19,24,0.98)] shadow-xl shadow-black/40"
           onMouseDown={(event) => event.stopPropagation()}
+          onWheelCapture={(event) => event.stopPropagation()}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-[var(--text-dim)]">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 text-[12px] uppercase tracking-[0.18em] text-[var(--text-dim)]">
             <span>Prompt log</span>
             <button
               type="button"
-              className="rounded-md px-2 py-1 text-[12px] normal-case tracking-normal text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]"
+              className="rounded-md px-2.5 py-1.5 text-[13px] normal-case tracking-normal text-[var(--text-dim)] hover:bg-white/5 hover:text-[var(--text)]"
               onClick={() => setIsSystemPromptOpen(false)}
             >
               Close
             </button>
           </div>
-          <div className="node-scrollbar max-h-56 overflow-y-auto px-3 py-3 text-[11px]">
+          <div className="node-scrollbar nowheel min-h-0 flex-1 overflow-y-auto px-4 py-4 text-[12px]" onWheelCapture={(event) => event.stopPropagation()}>
             {generationSystemPrompt && <PromptLogBlock label="System" content={generationSystemPrompt} />}
             {generationUserMessage && <PromptLogBlock label="User" content={generationUserMessage} />}
           </div>
@@ -3241,12 +3244,12 @@ function MetaButton({ icon, label, onClick }: { icon: ReactNode; label: string; 
 
 function PromptLogBlock({ label, content }: { label: string; content: string }) {
   return (
-    <div className="mb-2 last:mb-0">
-      <div className="mb-1 flex items-center justify-between gap-2 text-[var(--text-faint)]">
+    <div className="mb-4 last:mb-0">
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-[var(--text-faint)]">
         <span>{label}:</span>
         <span className="shrink-0 tabular-nums">{content.length} chars</span>
       </div>
-      <pre className="min-h-0 whitespace-pre-wrap break-words rounded-[6px] border border-[var(--border)] bg-[rgba(0,0,0,0.12)] px-2 py-2 font-mono text-[10px] leading-[1.6] text-[var(--text-dim)]">{content}</pre>
+      <pre className="min-h-0 whitespace-pre-wrap break-words rounded-[8px] border border-[var(--border)] bg-[rgba(0,0,0,0.12)] px-3 py-3 font-mono text-[12px] leading-[1.65] text-[var(--text-dim)]">{content}</pre>
     </div>
   )
 }
