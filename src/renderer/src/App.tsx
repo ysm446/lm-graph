@@ -2146,7 +2146,20 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
         <div className="mb-4 flex items-start gap-2">
           <div className="flex-1">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--text-dim)]">{displayNodeTypeLabel(node.type, node.isLocal)}</div>
-            {!data.isEditing && <div className="text-lg text-[var(--text)]" style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}>{node.title || 'Untitled'}</div>}
+            {data.isEditing ? (
+              <input
+                ref={titleInputRef}
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onBlur={commitDraft}
+                onMouseDown={(event) => event.stopPropagation()}
+                placeholder="Untitled"
+                className="nodrag nopan w-full rounded-md border-0 bg-transparent p-0 text-[var(--text)] outline-none ring-1 ring-[var(--border-strong)] ring-offset-4 ring-offset-[var(--bg-card)]"
+                style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}
+              />
+            ) : (
+              <div className="text-lg text-[var(--text)]" style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}>{node.title || 'Untitled'}</div>
+            )}
           </div>
           <button
             className={`nodrag nopan ml-auto rounded-[10px] border px-3 py-1.5 text-sm font-medium transition ${
@@ -2191,17 +2204,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           )}
         </div>
         {data.isEditing ? (
-          <div className="flex flex-1 flex-col gap-3">
-            <input
-              ref={titleInputRef}
-              value={draftTitle}
-              onChange={(event) => setDraftTitle(event.target.value)}
-              onBlur={commitDraft}
-              onMouseDown={(event) => event.stopPropagation()}
-              placeholder="Untitled"
-              className="nodrag nopan rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
-              style={{ fontFamily: 'var(--node-title-font-family)', fontSize: 'var(--node-title-font-size)', fontWeight: 'var(--node-title-font-weight)', letterSpacing: 'var(--node-title-letter-spacing)' }}
-            />
+          <div className="flex flex-1 flex-col">
             {isSwitchNodeType(node.type) ? (
               <SwitchIndexControl
                 value={parseSwitchInputIndex(draftContent)}
@@ -2210,7 +2213,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 onChange={changeSwitchIndex}
               />
             ) : (
-            <div className="relative flex-1">
+            <div className="relative flex-1 rounded-md bg-[rgba(0,0,0,0.08)] ring-1 ring-[var(--border-strong)]">
               <textarea
                 ref={textareaRef}
                 value={draftContent}
@@ -2250,7 +2253,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
                 placeholder="No content yet."
-                className="node-scrollbar nodrag nopan nowheel h-full w-full resize-none overflow-y-auto rounded-md border border-[var(--border-strong)] bg-[rgba(0,0,0,0.14)] px-3 py-2 text-[var(--text)] outline-none"
+                className="node-scrollbar nodrag nopan nowheel h-full w-full resize-none overflow-y-auto rounded-md border-0 bg-transparent p-0 pr-1 text-[var(--text)] outline-none"
                 style={{ fontFamily: 'var(--node-content-font-family)', fontSize: 'var(--node-content-font-size)', fontWeight: 'var(--node-content-font-weight)', lineHeight: 'var(--node-content-line-height)', letterSpacing: 'var(--node-content-letter-spacing)' }}
               />
               {selectionProofreadAction && (
