@@ -200,7 +200,7 @@ export function switchHandleAt(type: 'textSwitch' | 'contextSwitch' | 'instructi
 
 export function switchHandleIndex(handle: NodeInputHandle | null): number | null {
   if (!handle) return null
-  const match = handle.match(/^(?:context|instruction):(\d+)$/)
+  const match = handle.match(/^(?:text|context|instruction):(\d+)$/)
   if (!match) return null
   const index = Number.parseInt(match[1], 10)
   return Number.isFinite(index) && index > 0 ? index : null

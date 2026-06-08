@@ -101,7 +101,7 @@ textarea {
 .react-flow__edge.switch-edge-muted-text .react-flow__edge-path,
 .react-flow__edge-path.switch-edge-muted-text,
 .switch-edge-muted-text.react-flow__edge-path {
-  stroke-dasharray: 4 14 !important;
+  stroke-dasharray: 10 9 !important;
 }
 
 .react-flow__node {

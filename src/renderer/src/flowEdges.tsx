@@ -9,7 +9,7 @@ function RoundedSmoothStepEdge({ sourceX, sourceY, targetX, targetY, sourcePosit
 export const edgeTypes = { smoothstep: RoundedSmoothStepEdge }
 
 export function edgeStyleForHandle(handle: NodeInputHandle | null, options: { muted?: boolean } = {}) {
-  const mutedDash = handle === 'text' || handle === null ? '4 14' : '8 7'
+  const mutedDash = handle === 'text' || handle === null ? '10 9' : '8 7'
   const mutedStyle = options.muted ? { strokeDasharray: mutedDash, opacity: 0.38 } : { strokeDasharray: 'none' }
   if (handle === 'context') {
     return { strokeWidth: 2.6, stroke: '#6170d8', opacity: 0.84, ...mutedStyle }
@@ -24,7 +24,7 @@ export function edgeStyleForHandle(handle: NodeInputHandle | null, options: { mu
 }
 
 export function selectedEdgeStyleForHandle(handle: NodeInputHandle | null, options: { muted?: boolean } = {}) {
-  const mutedDash = handle === 'text' || handle === null ? '4 14' : '8 7'
+  const mutedDash = handle === 'text' || handle === null ? '10 9' : '8 7'
   const mutedStyle = options.muted ? { strokeDasharray: mutedDash, opacity: 0.72 } : { strokeDasharray: 'none' }
   if (handle === 'context') {
     return { strokeWidth: 3.5, stroke: '#7b89f0', opacity: 1, ...mutedStyle }
