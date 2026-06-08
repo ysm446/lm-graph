@@ -92,6 +92,18 @@ textarea {
   z-index: 1 !important;
 }
 
+.react-flow__edge.switch-edge-muted .react-flow__edge-path,
+.react-flow__edge-path.switch-edge-muted,
+.switch-edge-muted.react-flow__edge-path {
+  stroke-dasharray: 10 9 !important;
+}
+
+.react-flow__edge.switch-edge-muted-text .react-flow__edge-path,
+.react-flow__edge-path.switch-edge-muted-text,
+.switch-edge-muted-text.react-flow__edge-path {
+  stroke-dasharray: 4 14 !important;
+}
+
 .react-flow__node {
   z-index: auto !important;
 }

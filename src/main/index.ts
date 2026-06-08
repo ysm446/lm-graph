@@ -754,6 +754,8 @@ function stripThinkTags(content: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trimStart()
 }
+type SwitchHandle = 'text' | 'context' | 'instruction'
+
 function getHandleParents(
   targetId: string,
   handle: NodeInputHandle,
@@ -764,13 +766,13 @@ function getHandleParents(
     .filter((edge) => edge.targetId === targetId && baseTargetHandle(resolveTargetHandle(edge, nodeMap)) === handle)
     .map((edge) => nodeMap.get(edge.sourceId))
     .filter((node): node is GraphNodeRecord => Boolean(node))
-  if (handle !== 'context' && handle !== 'instruction') return parents
+  if (handle !== 'text' && handle !== 'context' && handle !== 'instruction') return parents
   return parents.flatMap((node) => resolveSwitchParent(node, handle, edges, nodeMap, new Set([targetId])))
 }
 
 function resolveSwitchParent(
   node: GraphNodeRecord,
-  handle: 'context' | 'instruction',
+  handle: SwitchHandle,
   edges: GraphEdgeRecord[],
   nodeMap: Map<string, GraphNodeRecord>,
   visited: Set<string>
@@ -797,8 +799,8 @@ function resolveSwitchParent(
   return fallbackInput ? resolveSwitchParent(fallbackInput, handle, edges, nodeMap, visited) : []
 }
 
-function isSwitchForHandle(node: GraphNodeRecord, handle: 'context' | 'instruction'): boolean {
-  return (handle === 'context' && node.type === 'contextSwitch') || (handle === 'instruction' && node.type === 'instructionSwitch')
+function isSwitchForHandle(node: GraphNodeRecord, handle: SwitchHandle): boolean {
+  return (handle === 'text' && node.type === 'textSwitch') || (handle === 'context' && node.type === 'contextSwitch') || (handle === 'instruction' && node.type === 'instructionSwitch')
 }
 
 function parseSwitchInputIndex(content: string): number {
@@ -833,10 +835,14 @@ function traverseTextParents(
   for (const edge of edges) {
     if (edge.targetId !== nodeId || baseTargetHandle(resolveTargetHandle(edge, nodeMap)) !== 'text') continue
     const parent = nodeMap.get(edge.sourceId)
-    if (!parent || parent.type !== 'text' || visited.has(parent.id)) continue
+    if (!parent || (parent.type !== 'text' && parent.type !== 'textSwitch') || visited.has(parent.id)) continue
     visited.add(parent.id)
-    results.push(parent)
-    results.push(...traverseTextParents(parent.id, edges, nodeMap, visited))
+    const resolvedParents = resolveSwitchParent(parent, 'text', edges, nodeMap, new Set(visited))
+    const textParents = resolvedParents.filter((resolvedParent) => resolvedParent.type === 'text')
+    results.push(...textParents)
+    for (const textParent of textParents) {
+      results.push(...traverseTextParents(textParent.id, edges, nodeMap, visited))
+    }
   }
   return results
 }
@@ -849,13 +855,14 @@ function resolveTargetHandle(edge: GraphEdgeRecord, nodeMap: Map<string, GraphNo
 
 function baseTargetHandle(handle: NodeInputHandle | null): NodeInputHandle | null {
   if (!handle) return null
+  if (handle.startsWith('text:')) return 'text'
   if (handle.startsWith('context:')) return 'context'
   if (handle.startsWith('instruction:')) return 'instruction'
   return handle
 }
 
 function defaultTargetHandleForNodeType(type: NodeType): NodeInputHandle | null {
-  if (type === 'text') return 'text'
+  if (type === 'text' || type === 'textSwitch') return 'text'
   if (type === 'context' || type === 'contextSwitch') return 'context'
   if (type === 'image') return 'image'
   return 'instruction'

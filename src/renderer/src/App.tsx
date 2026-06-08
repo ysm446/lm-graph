@@ -110,14 +110,39 @@ type NodeMenuState = {
 function getSwitchInputCount(node: GraphNodeRecord, edges: GraphEdgeRecord[]): number {
   if (!isSwitchNodeType(node.type)) return 0
   const baseHandle = switchInputHandleForNodeType(node.type)
-  const maxConnectedIndex = edges
+  const switchEdges = edges
     .filter((edge) => edge.targetId === node.id && baseTargetHandle(edge.targetHandle) === baseHandle)
+  const maxConnectedIndex = switchEdges
     .reduce((max, edge) => Math.max(max, switchHandleIndex(edge.targetHandle) ?? 1), 0)
-  return Math.min(12, Math.max(1, maxConnectedIndex + 1))
+  return Math.min(12, Math.max(1, maxConnectedIndex, switchEdges.length) + 1)
 }
 
 function getSwitchSliderMax(inputCount: number): number {
   return Math.max(1, Math.min(12, inputCount - 1))
+}
+
+type SwitchKind = 'text' | 'context' | 'instruction'
+
+function switchKindForNodeType(type: 'textSwitch' | 'contextSwitch' | 'instructionSwitch'): SwitchKind {
+  if (type === 'textSwitch') return 'text'
+  if (type === 'contextSwitch') return 'context'
+  return 'instruction'
+}
+
+function switchHandleColorClass(kind: SwitchKind): string {
+  if (kind === 'text') return '!border-[var(--text-faint)] !bg-[var(--text)]'
+  if (kind === 'context') return '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]'
+  return '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]'
+}
+
+function switchTextColorClass(kind: SwitchKind): string {
+  if (kind === 'text') return 'text-[var(--text-dim)]'
+  if (kind === 'context') return 'text-[rgb(162,170,255)]'
+  return 'text-[rgb(221,156,221)]'
+}
+
+function mutedSwitchEdgeClass(handle: NodeInputHandle | null): string {
+  return handle === 'text' ? 'switch-edge-muted switch-edge-muted-text' : 'switch-edge-muted'
 }
 
 type ProjectDialogState =
@@ -362,8 +387,9 @@ function GraphChatApp() {
         return {
           ...edge,
           selected: edge.id === selectedEdgeId,
+          className: isMutedSwitchEdge ? mutedSwitchEdgeClass(targetBaseHandle) : undefined,
           style: edge.id === selectedEdgeId
-            ? selectedEdgeStyleForHandle(targetBaseHandle)
+            ? selectedEdgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
             : edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
         }
       })
@@ -568,7 +594,7 @@ function GraphChatApp() {
   function applySnapshot(snapshot: ProjectSnapshot) {
     const previousEdgeMap = new Map((snapshotRef.current?.edges ?? []).map((edge) => [edge.id, edge]))
     const nodeMap = new Map(snapshot.nodes.map((node) => [node.id, node]))
-    const switchHandleCounters = new Map<string, number>()
+    const switchHandleUsage = new Map<string, Set<number>>()
     const normalizedSnapshot: ProjectSnapshot = {
       ...snapshot,
       edges: snapshot.edges.map((edge) => {
@@ -578,9 +604,26 @@ function GraphChatApp() {
         const resolvedTargetHandle = edge.targetHandle ?? previous?.targetHandle ?? resolveTargetHandleForEdge(edge, snapshot.nodes)
         let targetHandle = resolvedTargetHandle
         if (targetSwitchHandle && baseTargetHandle(targetHandle) === targetSwitchHandle && switchHandleIndex(targetHandle) === null) {
-          const nextIndex = (switchHandleCounters.get(edge.targetId) ?? 0) + 1
-          switchHandleCounters.set(edge.targetId, nextIndex)
-          targetHandle = switchHandleAt(targetNode!.type as 'contextSwitch' | 'instructionSwitch', nextIndex)
+          const key = `${edge.targetId}:${targetSwitchHandle}`
+          const usedIndexes = switchHandleUsage.get(key) ?? new Set<number>()
+          switchHandleUsage.set(key, usedIndexes)
+          let nextIndex = 1
+          while (usedIndexes.has(nextIndex)) nextIndex += 1
+          usedIndexes.add(nextIndex)
+          targetHandle = switchHandleAt(targetNode!.type, nextIndex)
+        } else if (targetSwitchHandle && baseTargetHandle(targetHandle) === targetSwitchHandle) {
+          const key = `${edge.targetId}:${targetSwitchHandle}`
+          const usedIndexes = switchHandleUsage.get(key) ?? new Set<number>()
+          switchHandleUsage.set(key, usedIndexes)
+          const currentIndex = switchHandleIndex(targetHandle) ?? 1
+          if (usedIndexes.has(currentIndex)) {
+            let nextIndex = 1
+            while (usedIndexes.has(nextIndex)) nextIndex += 1
+            usedIndexes.add(nextIndex)
+            targetHandle = switchHandleAt(targetNode!.type, nextIndex)
+          } else {
+            usedIndexes.add(currentIndex)
+          }
         }
         return {
           ...edge,
@@ -641,6 +684,7 @@ function GraphChatApp() {
         targetHandle: edge.targetHandle,
         zIndex: 0,
         animated: false,
+        className: isMutedSwitchEdge ? mutedSwitchEdgeClass(targetBaseHandle) : undefined,
         style: edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
       }
     }))
@@ -1501,8 +1545,9 @@ function GraphChatApp() {
         const isMutedSwitchEdge = edgeSwitchIndex !== null && edgeSwitchIndex !== parseSwitchInputIndex(updated.content)
         return {
           ...edge,
+          className: isMutedSwitchEdge ? mutedSwitchEdgeClass(targetBaseHandle) : undefined,
           style: edge.id === selectedEdgeId
-            ? selectedEdgeStyleForHandle(targetBaseHandle)
+            ? selectedEdgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
             : edgeStyleForHandle(targetBaseHandle, { muted: isMutedSwitchEdge })
         }
       }))
@@ -1718,6 +1763,7 @@ function GraphChatApp() {
             <MenuAction compact label="Add Text" onClick={() => void addNode('text', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Context" onClick={() => void addNode('context', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Instruction" onClick={() => void addNode('instruction', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
+            <MenuAction compact label="Add Text Switch" onClick={() => void addNode('textSwitch', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Context Switch" onClick={() => void addNode('contextSwitch', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Instruction Switch" onClick={() => void addNode('instructionSwitch', { x: canvasMenu.flowX, y: canvasMenu.flowY })} />
             <MenuAction compact label="Add Image" onClick={() => void addImageNode({ x: canvasMenu.flowX, y: canvasMenu.flowY })} />
@@ -2131,6 +2177,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
     context: 'border-[rgb(90,100,210)] bg-[var(--bg-card)]',
     instruction: 'border-[rgb(156,76,196)] bg-[var(--bg-card)]',
     image: 'border-[#4a8fcb] bg-[var(--bg-card)]',
+    textSwitch: 'border-[#687083] bg-[var(--bg-card)]',
     contextSwitch: 'border-[rgb(74,91,190)] bg-[var(--bg-card)]',
     instructionSwitch: 'border-[rgb(136,70,160)] bg-[var(--bg-card)]'
   } as const
@@ -2139,6 +2186,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
     context: '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]',
     instruction: '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]',
     image: '!border-[#669fe0] !bg-[#669fe0]',
+    textSwitch: '!border-[var(--text-faint)] !bg-[var(--text)]',
     contextSwitch: '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]',
     instructionSwitch: '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]'
   } as const
@@ -2245,7 +2293,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
         const selectedIndex = parseSwitchInputIndex(node.content)
         const top = `${((index) / (switchInputCount + 1)) * 100}%`
         const isSelectedInput = index === selectedIndex
-        const isContextSwitch = node.type === 'contextSwitch'
+        const switchKind = switchKindForNodeType(node.type)
         return (
           <div key={index}>
             <Handle
@@ -2253,10 +2301,10 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               type="target"
               position={Position.Left}
               style={{ top }}
-              className={`!h-5 !w-5 !border-2 ${isContextSwitch ? '!border-[rgb(111,126,255)] !bg-[rgb(111,126,255)]' : '!border-[rgb(201,108,210)] !bg-[rgb(201,108,210)]'} ${isSelectedInput ? '!shadow-[0_0_0_4px_rgba(255,255,255,0.18)]' : '!opacity-55'}`}
+              className={`!h-5 !w-5 !border-2 ${switchHandleColorClass(switchKind)} ${isSelectedInput ? '!shadow-[0_0_0_4px_rgba(255,255,255,0.18)]' : '!opacity-55'}`}
             />
             <div
-              className={`pointer-events-none absolute -left-10 -translate-y-1/2 text-[10px] font-semibold tabular-nums tracking-[0.08em] ${isContextSwitch ? 'text-[rgb(162,170,255)]' : 'text-[rgb(221,156,221)]'} ${isSelectedInput ? 'opacity-100' : 'opacity-55'}`}
+              className={`pointer-events-none absolute -left-10 -translate-y-1/2 text-[10px] font-semibold tabular-nums tracking-[0.08em] ${switchTextColorClass(switchKind)} ${isSelectedInput ? 'opacity-100' : 'opacity-55'}`}
               style={{ top }}
             >
               {index}
@@ -2339,7 +2387,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               <SwitchIndexControl
                 value={parseSwitchInputIndex(draftContent)}
                 max={getSwitchSliderMax(switchInputCount)}
-                kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+                kind={switchKindForNodeType(node.type)}
                 onChange={changeSwitchIndex}
               />
             ) : (
@@ -2486,7 +2534,7 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
             <SwitchIndexControl
               value={parseSwitchInputIndex(node.content)}
               max={getSwitchSliderMax(switchInputCount)}
-              kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+              kind={switchKindForNodeType(node.type)}
               onChange={changeSwitchIndex}
             />
           </div>
@@ -2578,7 +2626,7 @@ function SwitchIndexControl({
 }: {
   value: number
   max: number
-  kind: 'context' | 'instruction'
+  kind: SwitchKind
   onChange: (value: number) => void
 }) {
   const safeMax = Math.max(1, max)
@@ -2587,7 +2635,7 @@ function SwitchIndexControl({
     <div className="nodrag nopan px-1 py-2">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Selected input</div>
-        <div className={`text-lg font-semibold tabular-nums ${kind === 'context' ? 'text-[rgb(162,170,255)]' : 'text-[rgb(221,156,221)]'}`}>
+        <div className={`text-lg font-semibold tabular-nums ${switchTextColorClass(kind)}`}>
           #{safeValue}
         </div>
       </div>
@@ -2771,7 +2819,7 @@ function NodeEditor({
             <SwitchIndexControl
               value={parseSwitchInputIndex(draftContent)}
               max={getSwitchSliderMax(switchInputCount)}
-              kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+              kind={switchKindForNodeType(node.type)}
               onChange={changeSwitchIndex}
             />
           ) : (
@@ -2863,7 +2911,7 @@ function NodeEditor({
               <SwitchIndexControl
                 value={parseSwitchInputIndex(node.content)}
                 max={getSwitchSliderMax(switchInputCount)}
-                kind={node.type === 'contextSwitch' ? 'context' : 'instruction'}
+                kind={switchKindForNodeType(node.type)}
                 onChange={changeSwitchIndex}
               />
             </div>

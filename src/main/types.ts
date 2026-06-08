@@ -1,5 +1,5 @@
-export type NodeType = 'text' | 'context' | 'instruction' | 'image' | 'contextSwitch' | 'instructionSwitch'
-export type NodeInputHandle = 'text' | 'context' | 'instruction' | 'image' | `context:${number}` | `instruction:${number}`
+export type NodeType = 'text' | 'context' | 'instruction' | 'image' | 'textSwitch' | 'contextSwitch' | 'instructionSwitch'
+export type NodeInputHandle = 'text' | 'context' | 'instruction' | 'image' | `text:${number}` | `context:${number}` | `instruction:${number}`
 export type NodeOutputHandle = 'output'
 export type TextStyleTarget = 'both' | 'title' | 'content'
 export type TextStylePreset = 'standard' | 'business' | 'reading' | 'dense'

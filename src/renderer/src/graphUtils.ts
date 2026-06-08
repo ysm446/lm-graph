@@ -20,6 +20,8 @@ export function defaultTitle(type: NodeType): string {
       return 'Context'
     case 'instruction':
       return 'Instruction'
+    case 'textSwitch':
+      return 'Text Switch'
     case 'contextSwitch':
       return 'Context Switch'
     case 'instructionSwitch':
@@ -89,6 +91,7 @@ function sortTextNodesByDependencies(textNodes: string[], edges: GraphEdgeRecord
 export function displayNodeTypeLabel(type: NodeType, isLocal = false): string {
   if (type === 'instruction') return isLocal ? 'local instruction' : 'global instruction'
   if (type === 'context') return isLocal ? 'local context' : 'global context'
+  if (type === 'textSwitch') return 'text switch'
   if (type === 'contextSwitch') return 'context switch'
   if (type === 'instructionSwitch') return 'instruction switch'
   if (type === 'image') return 'image'
@@ -100,6 +103,7 @@ export function getMiniMapNodeColor(node: MiniMapNodeLike): string {
   const type = graphNode?.type
   if (type === 'context') return graphNode?.isLocal ? '#2e4f82' : '#1e3a6b'
   if (type === 'instruction') return graphNode?.isLocal ? '#6c3d63' : '#5b2d5d'
+  if (type === 'textSwitch') return '#4b5563'
   if (type === 'contextSwitch') return '#263d78'
   if (type === 'instructionSwitch') return '#63336b'
   if (type === 'image') return '#4a8fcb'
@@ -183,13 +187,15 @@ export function resolveTargetHandleForEdge(edge: GraphEdgeRecord, nodes: GraphNo
 
 export function baseTargetHandle(handle: NodeInputHandle | null): NodeInputHandle | null {
   if (!handle) return null
+  if (handle.startsWith('text:')) return 'text'
   if (handle.startsWith('context:')) return 'context'
   if (handle.startsWith('instruction:')) return 'instruction'
   return handle
 }
 
-export function switchHandleAt(type: 'contextSwitch' | 'instructionSwitch', index: number): NodeInputHandle {
-  return `${type === 'contextSwitch' ? 'context' : 'instruction'}:${index}` as NodeInputHandle
+export function switchHandleAt(type: 'textSwitch' | 'contextSwitch' | 'instructionSwitch', index: number): NodeInputHandle {
+  const base = type === 'textSwitch' ? 'text' : type === 'contextSwitch' ? 'context' : 'instruction'
+  return `${base}:${index}` as NodeInputHandle
 }
 
 export function switchHandleIndex(handle: NodeInputHandle | null): number | null {
@@ -201,17 +207,18 @@ export function switchHandleIndex(handle: NodeInputHandle | null): number | null
 }
 
 export function defaultTargetHandleForNodeType(type: NodeType): NodeInputHandle {
-  if (type === 'text') return 'text'
+  if (type === 'text' || type === 'textSwitch') return 'text'
   if (type === 'context' || type === 'contextSwitch') return 'context'
   if (type === 'image') return 'image'
   return 'instruction'
 }
 
-export function isSwitchNodeType(type: NodeType): type is 'contextSwitch' | 'instructionSwitch' {
-  return type === 'contextSwitch' || type === 'instructionSwitch'
+export function isSwitchNodeType(type: NodeType): type is 'textSwitch' | 'contextSwitch' | 'instructionSwitch' {
+  return type === 'textSwitch' || type === 'contextSwitch' || type === 'instructionSwitch'
 }
 
 export function switchInputHandleForNodeType(type: NodeType): NodeInputHandle | null {
+  if (type === 'textSwitch') return 'text'
   if (type === 'contextSwitch') return 'context'
   if (type === 'instructionSwitch') return 'instruction'
   return null
