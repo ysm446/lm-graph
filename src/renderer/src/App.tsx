@@ -3020,7 +3020,7 @@ function GeneralInspector({
         <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
           <div className="min-w-0">
             <div className="text-[13px] text-[var(--text-dim)]">Content Area</div>
-            <div className="mt-0.5 text-[11px] text-[var(--text-faint)]">Reset to 1600 x 900</div>
+            <div className="mt-0.5 text-[11px] text-[var(--text-faint)]">Reset to 1920 x 1080</div>
           </div>
           <button
             type="button"
