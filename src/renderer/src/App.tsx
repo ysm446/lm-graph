@@ -2362,6 +2362,10 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           </div>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)]">
+          {node.generationMeta?.completionTokens != null && <MetaItem icon={<MessageIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} tokens`} />}
+          {node.generationMeta?.tokensPerSecond != null && <MetaItem icon={<BoltIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.tokensPerSecond.toFixed(1)} tok/s`} />}
+          {node.generationMeta?.durationSeconds != null && <MetaItem icon={<ClockIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.durationSeconds.toFixed(2)}s`} />}
+          {node.generationMeta?.finishReason && <MetaItem icon={<FlagIcon className="h-3.5 w-3.5" />} label={node.generationMeta.finishReason} />}
           {hasGenerationPromptLog && (
             <MetaButton
               icon={<PromptIcon className="h-3.5 w-3.5" />}
@@ -2369,10 +2373,6 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
               onClick={() => setIsSystemPromptOpen((open) => !open)}
             />
           )}
-          {node.generationMeta?.completionTokens != null && <MetaItem icon={<MessageIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.completionTokens} tokens`} />}
-          {node.generationMeta?.tokensPerSecond != null && <MetaItem icon={<BoltIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.tokensPerSecond.toFixed(1)} tok/s`} />}
-          {node.generationMeta?.durationSeconds != null && <MetaItem icon={<ClockIcon className="h-3.5 w-3.5" />} label={`${node.generationMeta.durationSeconds.toFixed(2)}s`} />}
-          {node.generationMeta?.finishReason && <MetaItem icon={<FlagIcon className="h-3.5 w-3.5" />} label={node.generationMeta.finishReason} />}
           {(node.type === 'context' || node.type === 'instruction') && (
             <MetaItem icon={<MessageIcon className="h-3.5 w-3.5" />} label={`~${estimateTokenCount(node.content)} tokens`} />
           )}
