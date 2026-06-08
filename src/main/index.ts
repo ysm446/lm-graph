@@ -110,8 +110,8 @@ function startSystemResourcePolling(): void {
 
 const generationControllers = new Map<string, AbortController>()
 const proofreadControllers = new Map<string, AbortController>()
-const DEFAULT_CONTENT_WIDTH = 1920
-const DEFAULT_CONTENT_HEIGHT = 1080
+const DEFAULT_CONTENT_WIDTH = 1600
+const DEFAULT_CONTENT_HEIGHT = 900
 let repository: GraphRepository | null = null
 let llamaServer: LlamaServerManager | null = null
 let preferencesPath = ''
