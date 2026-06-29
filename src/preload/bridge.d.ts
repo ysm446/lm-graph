@@ -1,10 +1,15 @@
-import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, ProjectRecord, ProjectSnapshot, UiPreferences } from '../main/types'
+import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, LlamaServerStatus, ProjectRecord, ProjectSnapshot, UiPreferences } from '../main/types'
 
 export interface GraphChatApi {
   bootstrap(): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot; settings: AppSettings; uiPreferences: UiPreferences }>
   listModels(): Promise<AppSettings>
   selectModel(modelPath: string): Promise<{ settings: AppSettings }>
   ejectModel(): Promise<{ settings: AppSettings }>
+  getLlamaStatus(): Promise<LlamaServerStatus>
+  fetchLlamaReleases(): Promise<LlamaRelease[]>
+  installLlamaServer(variant: LlamaReleaseVariant): Promise<{ ok: boolean; canceled?: boolean; message?: string; settings?: AppSettings; status?: LlamaServerStatus }>
+  cancelLlamaInstall(): Promise<{ ok: true }>
+  onLlamaInstallProgress(callback: (payload: LlamaInstallProgress) => void): () => void
   updateSettings(input: { contextLength?: number; temperature?: number }): Promise<{ settings: AppSettings }>
   savePreferences(input: Partial<UiPreferences>): Promise<{ uiPreferences: UiPreferences }>
   resetWindowSize(): Promise<{ ok: boolean; width?: number; height?: number }>

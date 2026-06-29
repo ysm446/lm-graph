@@ -32,7 +32,7 @@ export const GRID_SIZE = 20
 export const DEFAULT_TITLE_FONT_SIZE = 18
 export const DEFAULT_CONTENT_FONT_SIZE = 14
 
-export type GeneralSectionKey = 'context' | 'interface' | 'textStyle' | 'editing' | 'debug'
+export type GeneralSectionKey = 'server' | 'context' | 'interface' | 'textStyle' | 'editing' | 'debug'
 
 export const TEXT_STYLE_PRESETS: Record<TextStylePreset, { label: string; description: string; titleFamily: string; titleWeight: number; titleLetterSpacing: string; contentFamily: string; contentWeight: number; contentLineHeight: number; contentLetterSpacing: string }> = {
   standard: {

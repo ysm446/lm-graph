@@ -7,7 +7,8 @@ import * as os from 'node:os'
 import { exec } from 'node:child_process'
 import { GraphRepository } from './database'
 import { LlamaServerManager } from './llamaServer'
-import type { GraphEdgeRecord, GraphNodeRecord, ImageAsset, NodeInputHandle, NodeType, ProjectSnapshot, UiPreferences } from './types'
+import { fetchLlamaReleases, installLlamaVariant } from './llamaInstaller'
+import type { GraphEdgeRecord, GraphNodeRecord, ImageAsset, LlamaInstallProgress, LlamaReleaseVariant, NodeInputHandle, NodeType, ProjectSnapshot, UiPreferences } from './types'
 
 // ── System resource monitoring ────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ function startSystemResourcePolling(): void {
 
 const generationControllers = new Map<string, AbortController>()
 const proofreadControllers = new Map<string, AbortController>()
+let llamaInstallController: AbortController | null = null
 const DEFAULT_CONTENT_WIDTH = 1920
 const DEFAULT_CONTENT_HEIGHT = 1080
 let repository: GraphRepository | null = null
@@ -140,6 +142,7 @@ const defaultUiPreferences: UiPreferences = {
   isPromptLogEnabled: false,
   isSystemMonitorVisible: true,
   generalSections: {
+    server: true,
     context: true,
     interface: true,
     textStyle: true,
@@ -265,6 +268,33 @@ function registerIpc(): void {
   ipcMain.handle('models:eject', async () => {
     await llamaServer.stop()
     return { settings: await llamaServer.getRuntimeSettings() }
+  })
+  ipcMain.handle('llama:status', async () => llamaServer.getServerStatus())
+  ipcMain.handle('llama:releases', async () => fetchLlamaReleases())
+  ipcMain.handle('llama:install', async (event, variant: LlamaReleaseVariant) => {
+    if (llamaInstallController) {
+      throw new Error('An installation is already in progress.')
+    }
+    const controller = new AbortController()
+    llamaInstallController = controller
+    const onProgress = (progress: LlamaInstallProgress): void => {
+      if (!event.sender.isDestroyed()) event.sender.send('llama:install-progress', progress)
+    }
+    try {
+      await installLlamaVariant({ runtimeDir: llamaServer.getRuntimeDir(), variant, onProgress, signal: controller.signal })
+      const settings = await llamaServer.rescan()
+      return { ok: true as const, settings, status: llamaServer.getServerStatus() }
+    } catch (error) {
+      const aborted = controller.signal.aborted || (error as Error)?.name === 'AbortError'
+      onProgress(aborted ? { phase: 'canceled' } : { phase: 'error', message: error instanceof Error ? error.message : String(error) })
+      return { ok: false as const, canceled: aborted, message: error instanceof Error ? error.message : String(error) }
+    } finally {
+      llamaInstallController = null
+    }
+  })
+  ipcMain.handle('llama:install-cancel', async () => {
+    llamaInstallController?.abort()
+    return { ok: true as const }
   })
   ipcMain.handle('settings:update', async (_event, input: { contextLength?: number; temperature?: number }) => {
     const settings = await llamaServer.updateSettings(input)
@@ -910,6 +940,7 @@ function mergeUiPreferences(input: Partial<UiPreferences>): UiPreferences {
     isPromptLogEnabled: input.isPromptLogEnabled ?? defaultUiPreferences.isPromptLogEnabled,
     isSystemMonitorVisible: input.isSystemMonitorVisible ?? defaultUiPreferences.isSystemMonitorVisible,
     generalSections: {
+      server: input.generalSections?.server ?? defaultUiPreferences.generalSections.server,
       context: input.generalSections?.context ?? defaultUiPreferences.generalSections.context,
       interface: input.generalSections?.interface ?? defaultUiPreferences.generalSections.interface,
       textStyle: input.generalSections?.textStyle ?? defaultUiPreferences.generalSections.textStyle,

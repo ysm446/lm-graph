@@ -1,10 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { app } from 'electron'
-import type { AppSettings, ModelMetadata, ModelOption } from './types'
+import type { AppSettings, LlamaServerInstall, LlamaServerStatus, ModelMetadata, ModelOption } from './types'
 
 const DEFAULT_PORT = 8080
 const DEFAULT_CONTEXT_LENGTH = 32768
@@ -14,7 +14,9 @@ const PREFERRED_LLAMA_SERVER_DIR = 'b9496-win-cuda13-x64'
 export class LlamaServerManager {
   private process: ChildProcessWithoutNullStreams | null = null
   private readonly rootDir: string
-  private readonly serverPath: string
+  private readonly runtimeDir: string
+  private serverPath: string | null
+  private serverBuild: string | null = null
   private readonly modelsDir: string
   private readonly modelMetadataCache = new Map<string, Partial<ModelMetadata>>()
   private port = DEFAULT_PORT
@@ -22,9 +24,16 @@ export class LlamaServerManager {
 
   constructor() {
     this.rootDir = resolveAppRoot()
-    this.serverPath = resolveLlamaServerPath(this.rootDir)
+    this.runtimeDir = join(this.rootDir, 'runtime')
     this.modelsDir = join(this.rootDir, 'models')
+    this.serverPath = resolveLlamaServerPath(this.rootDir)
+    this.serverBuild = this.serverPath ? extractBuildLabel(this.serverPath) : null
     this.settings = this.buildSettings(findDefaultModel(this.listModels()))
+  }
+
+  /** Directory new llama-server builds are installed into. */
+  getRuntimeDir(): string {
+    return this.runtimeDir
   }
 
   getSettings(): AppSettings {
@@ -43,9 +52,9 @@ export class LlamaServerManager {
 
   listModels(): ModelOption[] {
     if (!existsSync(this.modelsDir)) {
-      throw new Error(`Models directory was not found: ${this.modelsDir}`)
+      return []
     }
-    const candidates = walkFiles(this.modelsDir)
+    return walkFiles(this.modelsDir)
       .filter((file) => file.toLowerCase().endsWith('.gguf'))
       .filter((file) => !/mmproj/i.test(file))
       .map((file) => ({
@@ -58,14 +67,36 @@ export class LlamaServerManager {
         )
       }))
       .sort((left, right) => left.name.localeCompare(right.name))
+  }
 
-    if (candidates.length === 0) {
-      throw new Error('No GGUF model file was found in models/.')
+  getServerStatus(): LlamaServerStatus {
+    const installs = findServerInstalls(this.rootDir)
+    return {
+      installed: this.serverPath !== null,
+      build: this.serverBuild,
+      path: this.serverPath,
+      installDir: this.serverPath ? dirname(this.serverPath) : null,
+      installRoot: this.runtimeDir,
+      installs
     }
-    return candidates
+  }
+
+  /** Re-scan the disk for a freshly installed server / model and rebuild settings. */
+  async rescan(): Promise<AppSettings> {
+    this.serverPath = resolveLlamaServerPath(this.rootDir)
+    this.serverBuild = this.serverPath ? extractBuildLabel(this.serverPath) : null
+    const models = this.listModels()
+    const current =
+      models.find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath)) ??
+      findDefaultModel(models)
+    this.settings = this.buildSettings(current, models, this.settings.contextLength, this.settings.temperature)
+    return this.getRuntimeSettings()
   }
 
   async selectModel(modelPath: string): Promise<AppSettings> {
+    if (!this.serverPath) {
+      throw new Error('llama.cpp server is not installed. Install it from the Settings sidebar.')
+    }
     const resolvedPath = resolve(modelPath)
     const availableModels = this.listModels()
     const selected = availableModels.find((model) => resolve(model.path) === resolvedPath)
@@ -85,21 +116,27 @@ export class LlamaServerManager {
   async updateSettings(input: { contextLength?: number; temperature?: number }): Promise<AppSettings> {
     const nextContextLength = input.contextLength ?? this.settings.contextLength
     const nextTemperature = input.temperature ?? this.settings.temperature
-    const currentModel = this.listModels().find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath))
-    if (!currentModel) {
-      throw new Error('Selected model was not found in models/.')
-    }
+    const availableModels = this.listModels()
+    const currentModel =
+      availableModels.find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath)) ??
+      findDefaultModel(availableModels)
 
     const changed = nextContextLength !== this.settings.contextLength
     if (changed && this.process) {
       await this.stop()
     }
 
-    this.settings = this.buildSettings(currentModel, this.listModels(), nextContextLength, nextTemperature)
+    this.settings = this.buildSettings(currentModel, availableModels, nextContextLength, nextTemperature)
     return this.getRuntimeSettings()
   }
 
   async ensureRunning(): Promise<AppSettings> {
+    if (!this.serverPath) {
+      throw new Error('llama.cpp server is not installed. Install it from the Settings sidebar.')
+    }
+    if (!this.settings.selectedModelPath) {
+      throw new Error('No GGUF model was found in models/. Add a model file first.')
+    }
     await this.ensureAvailablePort()
     if (await this.isHealthy()) {
       await this.refreshSelectedModelMetadata()
@@ -132,26 +169,27 @@ export class LlamaServerManager {
   }
 
   private buildSettings(
-    selectedModel: ModelOption,
+    selectedModel: ModelOption | null,
     availableModels = this.listModels(),
     contextLength = this.settings?.contextLength ?? DEFAULT_CONTEXT_LENGTH,
     temperature = this.settings?.temperature ?? DEFAULT_TEMPERATURE
   ): AppSettings {
-    accessSync(this.serverPath, constants.F_OK)
-    const resolvedMmprojPath = findMmprojForModel(selectedModel.path)
+    const resolvedMmprojPath = selectedModel ? findMmprojForModel(selectedModel.path) : null
     return {
       llamaBaseUrl: `http://127.0.0.1:${this.port}`,
-      llamaModelAlias: toModelAlias(selectedModel.name),
-      selectedModelPath: selectedModel.path,
-      selectedModelName: selectedModel.name,
+      llamaModelAlias: selectedModel ? toModelAlias(selectedModel.name) : 'local-model',
+      selectedModelPath: selectedModel?.path ?? '',
+      selectedModelName: selectedModel?.name ?? '',
       contextLength,
       temperature,
       availableModels,
-      resolvedModelPath: selectedModel.path,
+      resolvedModelPath: selectedModel?.path ?? '',
       resolvedMmprojPath,
-      resolvedServerPath: this.serverPath,
+      resolvedServerPath: this.serverPath ?? '',
       supportsVision: Boolean(resolvedMmprojPath),
-      isModelLoaded: false
+      isModelLoaded: false,
+      isServerInstalled: this.serverPath !== null,
+      serverBuild: this.serverBuild
     }
   }
 
@@ -199,11 +237,11 @@ export class LlamaServerManager {
     const availablePort = await findAvailablePort(DEFAULT_PORT)
     if (availablePort === this.port) return
     this.port = availablePort
-    const currentModel = this.listModels().find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath))
-    if (!currentModel) {
-      throw new Error('Selected model was not found in models/.')
-    }
-    this.settings = this.buildSettings(currentModel, this.listModels(), this.settings.contextLength, this.settings.temperature)
+    const availableModels = this.listModels()
+    const currentModel =
+      availableModels.find((model) => resolve(model.path) === resolve(this.settings.selectedModelPath)) ??
+      findDefaultModel(availableModels)
+    this.settings = this.buildSettings(currentModel, availableModels, this.settings.contextLength, this.settings.temperature)
   }
 
   private async waitForHealthy(): Promise<void> {
@@ -278,9 +316,9 @@ async function waitForProcessExit(proc: ChildProcessWithoutNullStreams, timeoutM
   })
 }
 
-function findDefaultModel(models: ModelOption[]): ModelOption {
+function findDefaultModel(models: ModelOption[]): ModelOption | null {
   const preferred = models.find((model) => /qwen3\.5-27b-q6_k\.gguf$/i.test(model.name))
-  return preferred ?? models[0]
+  return preferred ?? models[0] ?? null
 }
 
 function toModelAlias(modelName: string): string {
@@ -394,31 +432,49 @@ function findMmprojForModel(modelPath: string): string | null {
   return mmprojFiles[0] ?? null
 }
 
-function resolveLlamaServerPath(rootDir: string): string {
-  const serverRoot = join(rootDir, 'bin', 'llama-server')
-  if (!existsSync(serverRoot)) {
-    throw new Error(`llama-server directory was not found: ${serverRoot}`)
-  }
+function serverSearchRoots(rootDir: string): string[] {
+  // Prefer the user-managed runtime/ install dir; fall back to the legacy bin/llama-server location.
+  return [join(rootDir, 'runtime'), join(rootDir, 'bin', 'llama-server')]
+}
 
-  const directPath = join(serverRoot, 'llama-server.exe')
-  const candidates = existsSync(directPath)
-    ? [directPath]
-    : []
+function collectServerCandidates(rootDir: string): string[] {
+  const candidates: string[] = []
+  for (const serverRoot of serverSearchRoots(rootDir)) {
+    if (!existsSync(serverRoot)) continue
 
-  for (const entry of readdirSync(serverRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
-    const nestedPath = join(serverRoot, entry.name, 'llama-server.exe')
-    if (existsSync(nestedPath)) {
-      candidates.push(nestedPath)
+    const directPath = join(serverRoot, 'llama-server.exe')
+    if (existsSync(directPath)) candidates.push(directPath)
+
+    for (const entry of readdirSync(serverRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const nestedPath = join(serverRoot, entry.name, 'llama-server.exe')
+      if (existsSync(nestedPath)) candidates.push(nestedPath)
     }
   }
+  return candidates
+}
 
-  if (candidates.length === 0) {
-    throw new Error(`llama-server.exe was not found under: ${serverRoot}`)
-  }
-
+function resolveLlamaServerPath(rootDir: string): string | null {
+  const candidates = collectServerCandidates(rootDir)
+  if (candidates.length === 0) return null
   candidates.sort(compareServerCandidates)
   return candidates[0]
+}
+
+function findServerInstalls(rootDir: string): LlamaServerInstall[] {
+  return collectServerCandidates(rootDir)
+    .sort(compareServerCandidates)
+    .map((serverPath) => ({
+      build: extractBuildLabel(serverPath),
+      dir: dirname(serverPath),
+      path: serverPath
+    }))
+}
+
+function extractBuildLabel(serverPath: string): string | null {
+  const parentDirName = basename(dirname(serverPath))
+  const buildMatch = parentDirName.match(/(?:^|[^0-9a-z])(b\d+)(?:[^0-9a-z]|$)/i)
+  return buildMatch ? buildMatch[1].toLowerCase() : null
 }
 
 function compareServerCandidates(left: string, right: string): number {
@@ -469,7 +525,7 @@ function resolveAppRoot(): string {
   ]
 
   for (const candidate of candidates) {
-    if (existsSync(join(candidate, 'models')) || existsSync(join(candidate, 'bin'))) {
+    if (existsSync(join(candidate, 'models')) || existsSync(join(candidate, 'bin')) || existsSync(join(candidate, 'runtime'))) {
       return candidate
     }
   }

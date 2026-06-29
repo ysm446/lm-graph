@@ -5,6 +5,15 @@ contextBridge.exposeInMainWorld('graphChat', {
   listModels: () => ipcRenderer.invoke('models:list'),
   selectModel: (modelPath: string) => ipcRenderer.invoke('models:select', modelPath),
   ejectModel: () => ipcRenderer.invoke('models:eject'),
+  getLlamaStatus: () => ipcRenderer.invoke('llama:status'),
+  fetchLlamaReleases: () => ipcRenderer.invoke('llama:releases'),
+  installLlamaServer: (variant) => ipcRenderer.invoke('llama:install', variant),
+  cancelLlamaInstall: () => ipcRenderer.invoke('llama:install-cancel'),
+  onLlamaInstallProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('llama:install-progress', listener)
+    return () => ipcRenderer.off('llama:install-progress', listener)
+  },
   updateSettings: (input) => ipcRenderer.invoke('settings:update', input),
   savePreferences: (input) => ipcRenderer.invoke('preferences:save', input),
   resetWindowSize: () => ipcRenderer.invoke('window:resetSize'),

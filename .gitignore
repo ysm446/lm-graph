@@ -15,6 +15,7 @@ __electron_probe/
 
 # Local runtime binaries and models
 bin/
+runtime/
 models/
 !models/.gitkeep
 

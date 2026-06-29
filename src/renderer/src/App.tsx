@@ -20,7 +20,7 @@ import {
   type Viewport
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
+import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
 import {
   DEFAULT_CONTENT_FONT_SIZE,
   DEFAULT_LEFT_SIDEBAR_WIDTH,
@@ -227,7 +227,7 @@ function GraphChatApp() {
   const [proofreadSystemPrompt, setProofreadSystemPrompt] = useState(DEFAULT_PROOFREAD_SYSTEM_PROMPT)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(DEFAULT_LEFT_SIDEBAR_WIDTH)
   const [rightInspectorWidth, setRightInspectorWidth] = useState(DEFAULT_RIGHT_INSPECTOR_WIDTH)
-  const [generalSections, setGeneralSections] = useState<{ context: boolean; interface: boolean; textStyle: boolean; editing: boolean; debug: boolean }>({ context: true, interface: true, textStyle: true, editing: true, debug: true })
+  const [generalSections, setGeneralSections] = useState<{ server: boolean; context: boolean; interface: boolean; textStyle: boolean; editing: boolean; debug: boolean }>({ server: true, context: true, interface: true, textStyle: true, editing: true, debug: true })
   const [isPromptLogEnabled, setIsPromptLogEnabled] = useState(false)
   const [isSystemMonitorVisible, setIsSystemMonitorVisible] = useState(true)
   const [promptLogs, setPromptLogs] = useState<Array<{ generationId: string; nodeTitle: string; systemPrompt: string; userMessage: string; timestamp: string }>>([])
@@ -280,7 +280,7 @@ function GraphChatApp() {
       if (uiPreferences.proofreadSystemPrompt) setProofreadSystemPrompt(uiPreferences.proofreadSystemPrompt)
       setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
       setRightInspectorWidth(Math.max(uiPreferences.rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH))
-      setGeneralSections({ ...uiPreferences.generalSections, debug: uiPreferences.generalSections.debug ?? true })
+      setGeneralSections({ ...uiPreferences.generalSections, server: uiPreferences.generalSections.server ?? true, debug: uiPreferences.generalSections.debug ?? true })
       setIsPromptLogEnabled(uiPreferences.isPromptLogEnabled ?? false)
       setIsSystemMonitorVisible(uiPreferences.isSystemMonitorVisible ?? true)
       setTextStyleTarget(uiPreferences.textStyleTarget)
@@ -2060,6 +2060,7 @@ function GraphChatApp() {
               contentFontSize={contentFontSize}
               sections={generalSections}
               onToggleSection={(section) => setGeneralSections((current) => ({ ...current, [section]: !current[section] }))}
+              onServerInstalled={(nextSettings) => setSettings(nextSettings)}
               onToggleMiniMap={() => setIsMiniMapVisible((current) => !current)}
               onToggleSnapToGrid={toggleSnapToGrid}
               onChangeEdgeType={setEdgeType}
@@ -2996,6 +2997,7 @@ function GeneralInspector({
   proofreadSystemPrompt,
   sections,
   onToggleSection,
+  onServerInstalled,
   onToggleMiniMap,
   onToggleSnapToGrid,
   onChangeEdgeType,
@@ -3028,8 +3030,9 @@ function GeneralInspector({
   titleFontSize: number
   contentFontSize: number
   proofreadSystemPrompt: string
-  sections: { context: boolean; interface: boolean; textStyle: boolean; editing: boolean; debug: boolean }
+  sections: { server: boolean; context: boolean; interface: boolean; textStyle: boolean; editing: boolean; debug: boolean }
   onToggleSection: (section: GeneralSectionKey) => void
+  onServerInstalled: (settings: AppSettings) => void
   onToggleMiniMap: () => void
   onToggleSnapToGrid: () => void
   onChangeEdgeType: (value: 'default' | 'smoothstep' | 'step') => void
@@ -3078,6 +3081,15 @@ function GeneralInspector({
 
   return (
     <div className="inspector-scrollbar flex-1 overflow-y-auto px-4 py-2">
+      <InspectorSection
+        title="Llama.cpp Server"
+        icon={<ServerIcon className="h-[15px] w-[15px]" />}
+        open={sections.server}
+        onToggle={() => onToggleSection('server')}
+      >
+        <LlamaServerInstaller settings={settings} onInstalled={onServerInstalled} />
+      </InspectorSection>
+
       <InspectorSection
         title="Context and Offload"
         icon={<TokenIcon className="h-[15px] w-[15px]" />}
@@ -3144,16 +3156,12 @@ function GeneralInspector({
                   <TrashIcon className="h-3.5 w-3.5" />
                 </button>
               )}
-              <input
-                type="number"
-                min={4096}
-                max={65536}
-                step={1024}
-                value={pendingContextLength}
-                onChange={(event) => setPendingContextLength(Number(event.target.value) || 4096)}
-                onBlur={() => onChangeContextLength(pendingContextLength)}
-                className="h-7 w-[94px] rounded-[9px] border border-[var(--border-strong)] bg-[rgba(28,31,43,0.88)] px-2.5 py-1 text-right text-[12px] text-[var(--text)] outline-none"
-              />
+              <span
+                title={`${pendingContextLength.toLocaleString()} tokens`}
+                className={`inline-flex h-7 min-w-[56px] items-center justify-center rounded-[9px] border px-2.5 text-[12px] font-medium tabular-nums ${isContextLengthChanged ? 'border-[var(--accent-border)] text-[var(--text)]' : 'border-[var(--border-strong)] text-[var(--text-dim)]'} bg-[rgba(28,31,43,0.88)]`}
+              >
+                {formatTokensShort(pendingContextLength)}
+              </span>
             </div>
           </div>
           <input
@@ -3167,6 +3175,11 @@ function GeneralInspector({
             onTouchEnd={() => onChangeContextLength(pendingContextLength)}
             className={`graph-slider w-full ${isContextLengthChanged ? 'graph-slider-active' : ''}`}
           />
+          <div className="mt-1 flex justify-between text-[10px] tabular-nums text-[var(--text-faint)]">
+            {[4096, 16384, 32768, 49152, 65536].map((tick) => (
+              <span key={tick}>{formatTokensShort(tick)}</span>
+            ))}
+          </div>
           <p className="mt-2 text-[11px] leading-5 text-[var(--text-faint)]">Applied on the next model load.</p>
         </label>
       </InspectorSection>
@@ -3433,6 +3446,241 @@ function InspectorSection({
       </button>
       {open && <div className="pt-2">{children}</div>}
     </div>
+  )
+}
+
+function formatTokensShort(tokens: number): string {
+  if (tokens >= 1024) {
+    const k = tokens / 1024
+    return `${Number.isInteger(k) ? k : k.toFixed(1)}K`
+  }
+  return String(tokens)
+}
+
+function formatBytes(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return '—'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`
+}
+
+function LlamaServerInstaller({ settings, onInstalled }: { settings: AppSettings | null; onInstalled: (settings: AppSettings) => void }) {
+  const [releases, setReleases] = useState<LlamaRelease[]>([])
+  const [selectedTag, setSelectedTag] = useState<string>('')
+  const [selectedVariantKey, setSelectedVariantKey] = useState<string>('')
+  const [isLoadingReleases, setIsLoadingReleases] = useState(false)
+  const [isInstalling, setIsInstalling] = useState(false)
+  const [progress, setProgress] = useState<LlamaInstallProgress | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    return window.graphChat.onLlamaInstallProgress((payload) => setProgress(payload))
+  }, [])
+
+  const selectedRelease = releases.find((release) => release.tag === selectedTag) ?? null
+  const selectedVariant =
+    selectedRelease?.variants.find((variant) => variant.key === selectedVariantKey) ?? selectedRelease?.variants[0] ?? null
+
+  const handleFetchReleases = async (): Promise<void> => {
+    setIsLoadingReleases(true)
+    setError(null)
+    try {
+      const fetched = await window.graphChat.fetchLlamaReleases()
+      setReleases(fetched)
+      const firstWithVariants = fetched.find((release) => release.variants.length > 0) ?? fetched[0]
+      if (firstWithVariants) {
+        setSelectedTag(firstWithVariants.tag)
+        // Variants are sorted CUDA-first by the main process, so the first is the recommended default.
+        setSelectedVariantKey(firstWithVariants.variants[0]?.key ?? '')
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setIsLoadingReleases(false)
+    }
+  }
+
+  const handleInstall = async (): Promise<void> => {
+    if (!selectedVariant) return
+    setIsInstalling(true)
+    setError(null)
+    setProgress(null)
+    try {
+      const result = await window.graphChat.installLlamaServer(selectedVariant)
+      if (result.ok && result.settings) {
+        onInstalled(result.settings)
+        setProgress({ phase: 'done', build: result.settings.serverBuild, path: result.settings.resolvedServerPath })
+      } else if (!result.ok && !result.canceled) {
+        setError(result.message ?? 'Installation failed.')
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setIsInstalling(false)
+    }
+  }
+
+  const handleCancel = (): void => {
+    void window.graphChat.cancelLlamaInstall()
+  }
+
+  const isInstalled = settings?.isServerInstalled ?? false
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[13px] text-[var(--text-dim)]">Status</span>
+        {isInstalled ? (
+          <span className="inline-flex items-center gap-1.5 rounded-[8px] border border-[var(--accent-border)] bg-[var(--accent)]/15 px-2.5 py-1 text-[12px] text-[var(--text)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Installed{settings?.serverBuild ? ` · ${settings.serverBuild}` : ''}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-2.5 py-1 text-[12px] text-[var(--text-dim)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Not installed
+          </span>
+        )}
+      </div>
+
+      {!isInstalled && (
+        <p className="text-[11px] leading-5 text-[var(--text-faint)]">
+          The llama.cpp server is required to load models and generate text. Fetch a build below and install it into the runtime/ folder.
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={() => void handleFetchReleases()}
+        disabled={isLoadingReleases || isInstalling}
+        className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-3 text-[12px] text-[var(--text)] transition hover:border-[var(--accent-border)] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <DownloadIcon className="h-3.5 w-3.5" />
+        {isLoadingReleases ? 'Fetching releases…' : releases.length > 0 ? 'Refresh releases' : 'Fetch available builds'}
+      </button>
+
+      {releases.length > 0 && (
+        <>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] text-[var(--text-dim)]">Release</span>
+            <select
+              value={selectedTag}
+              onChange={(event) => {
+                setSelectedTag(event.target.value)
+                const release = releases.find((item) => item.tag === event.target.value)
+                setSelectedVariantKey(release?.variants[0]?.key ?? '')
+              }}
+              disabled={isInstalling}
+              className="h-9 rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text)] outline-none disabled:opacity-50"
+            >
+              {releases.map((release) => (
+                <option key={release.tag} value={release.tag}>
+                  {release.tag}{release.publishedAt ? ` · ${release.publishedAt.slice(0, 10)}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] text-[var(--text-dim)]">Build variant</span>
+            <select
+              value={selectedVariant?.key ?? ''}
+              onChange={(event) => setSelectedVariantKey(event.target.value)}
+              disabled={isInstalling || !selectedRelease}
+              className="h-9 rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-2 text-[12px] text-[var(--text)] outline-none disabled:opacity-50"
+            >
+              {selectedRelease?.variants.map((variant) => (
+                <option key={variant.key} value={variant.key}>
+                  {variant.label} · {formatBytes(variant.sizeBytes + (variant.cudartSizeBytes ?? 0))}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {selectedVariant?.family === 'cuda' && (
+            <p className="text-[11px] leading-5 text-[var(--text-faint)]">
+              {selectedVariant.cudartUrl
+                ? 'The matching CUDA runtime (cudart) will be downloaded automatically. Requires an NVIDIA GPU + driver.'
+                : 'No matching CUDA runtime asset was found in this release. The build may fail to start without cudart DLLs.'}
+            </p>
+          )}
+
+          {isInstalling ? (
+            <div className="flex flex-col gap-2">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+                <div
+                  className="h-full rounded-full bg-[var(--accent)] transition-all"
+                  style={{ width: `${progress && progress.phase === 'download' && progress.percent !== null ? progress.percent : progress?.phase === 'extract' ? 100 : 0}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[var(--text-faint)]">{describeProgress(progress)}</span>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="rounded-[6px] border border-[var(--border-strong)] px-2 py-1 text-[11px] text-[var(--text-dim)] transition hover:bg-white/5"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleInstall()}
+              disabled={!selectedVariant}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-[8px] border border-[var(--accent-border)] bg-[var(--accent)] px-3 text-[12px] font-medium text-white shadow-sm transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <DownloadIcon className="h-3.5 w-3.5" />
+              {isInstalled ? 'Install / update build' : 'Download and install'}
+            </button>
+          )}
+        </>
+      )}
+
+      {progress?.phase === 'done' && !isInstalling && (
+        <p className="text-[11px] leading-5 text-emerald-400">Installation complete{progress.build ? ` (${progress.build})` : ''}. The server is ready.</p>
+      )}
+      {error && <p className="text-[11px] leading-5 text-red-400">{error}</p>}
+    </div>
+  )
+}
+
+function describeProgress(progress: LlamaInstallProgress | null): string {
+  if (!progress) return 'Starting…'
+  if (progress.phase === 'download') {
+    const pct = progress.percent !== null ? `${progress.percent}% · ` : ''
+    return `Downloading ${progress.fileLabel}… ${pct}${formatBytes(progress.received)}${progress.total ? ` / ${formatBytes(progress.total)}` : ''}`
+  }
+  if (progress.phase === 'extract') return `Extracting ${progress.fileLabel}…`
+  if (progress.phase === 'done') return 'Done'
+  if (progress.phase === 'canceled') return 'Canceled'
+  if (progress.phase === 'error') return progress.message
+  return ''
+}
+
+function ServerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="7" rx="1.5" />
+      <rect x="3" y="13" width="18" height="7" rx="1.5" />
+      <path d="M7 7.5h.01M7 16.5h.01" />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
   )
 }
 
