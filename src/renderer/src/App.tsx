@@ -1290,7 +1290,7 @@ function GraphChatApp() {
 
   async function handleContextLengthChange(contextLength: number) {
     if (!settings) return
-    const normalized = Math.max(4096, Math.min(65536, contextLength))
+    const normalized = Math.max(4096, Math.min(262144, contextLength))
     if (normalized === settings.contextLength) return
     setError(null)
     try {
@@ -3166,17 +3166,17 @@ function GeneralInspector({
           </div>
           <input
             type="range"
-            min={4096}
-            max={65536}
-            step={1024}
-            value={pendingContextLength}
-            onChange={(event) => setPendingContextLength(Number(event.target.value))}
+            min={0}
+            max={CONTEXT_LENGTH_STOPS.length - 1}
+            step={1}
+            value={nearestContextStopIndex(pendingContextLength)}
+            onChange={(event) => setPendingContextLength(CONTEXT_LENGTH_STOPS[Number(event.target.value)])}
             onMouseUp={() => onChangeContextLength(pendingContextLength)}
             onTouchEnd={() => onChangeContextLength(pendingContextLength)}
             className={`graph-slider w-full ${isContextLengthChanged ? 'graph-slider-active' : ''}`}
           />
           <div className="mt-1 flex justify-between text-[10px] tabular-nums text-[var(--text-faint)]">
-            {[4096, 16384, 32768, 49152, 65536].map((tick) => (
+            {[4096, 32768, 65536, 131072, 262144].map((tick) => (
               <span key={tick}>{formatTokensShort(tick)}</span>
             ))}
           </div>
@@ -3447,6 +3447,24 @@ function InspectorSection({
       {open && <div className="pt-2">{children}</div>}
     </div>
   )
+}
+
+// Standard context sizes the slider snaps to (in tokens), 4K up to 256K.
+const CONTEXT_LENGTH_STOPS = [
+  4096, 8192, 16384, 24576, 32768, 49152, 65536, 98304, 131072, 163840, 196608, 262144
+]
+
+function nearestContextStopIndex(tokens: number): number {
+  let bestIndex = 0
+  let bestDistance = Infinity
+  for (let index = 0; index < CONTEXT_LENGTH_STOPS.length; index += 1) {
+    const distance = Math.abs(CONTEXT_LENGTH_STOPS[index] - tokens)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      bestIndex = index
+    }
+  }
+  return bestIndex
 }
 
 function formatTokensShort(tokens: number): string {
