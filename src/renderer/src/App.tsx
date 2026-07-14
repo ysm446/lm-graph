@@ -20,7 +20,9 @@ import {
   type Viewport
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
+import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LibraryInfo, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
+
+type BootstrapPayload = Awaited<ReturnType<typeof window.graphChat.bootstrap>>
 import {
   DEFAULT_CONTENT_FONT_SIZE,
   DEFAULT_LEFT_SIDEBAR_WIDTH,
@@ -184,6 +186,8 @@ function GraphChatApp() {
   const mainRef = useRef<HTMLElement | null>(null)
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [activeProjectId, setActiveProjectId] = useState('')
+  const [library, setLibrary] = useState<LibraryInfo | null>(null)
+  const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useState(false)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const selectedNodeIdsRef = useRef<string[]>([])
@@ -265,40 +269,43 @@ function GraphChatApp() {
   generationQueueRef.current = generationQueue
   proofreadRef.current = proofread
 
+  function applyBootstrap({ projects, snapshot, settings, uiPreferences, library }: BootstrapPayload) {
+    setProjects(projects)
+    setSettings(settings)
+    setIsSidebarOpen(uiPreferences.isSidebarOpen)
+    setIsSettingsPanelOpen(uiPreferences.isSettingsPanelOpen)
+    setIsPropertiesPanelOpen(uiPreferences.isPropertiesPanelOpen)
+    setIsMiniMapVisible(uiPreferences.isMiniMapVisible)
+    setIsSnapToGridEnabled(uiPreferences.isSnapToGridEnabled)
+    setEdgeType(uiPreferences.edgeType)
+    setIsProofreadEnabled(uiPreferences.isProofreadEnabled)
+    setProofreadPreset(uiPreferences.proofreadPreset ?? 'standard')
+    if (uiPreferences.proofreadSystemPrompt) setProofreadSystemPrompt(uiPreferences.proofreadSystemPrompt)
+    setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
+    setRightInspectorWidth(Math.max(uiPreferences.rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH))
+    setGeneralSections({ ...uiPreferences.generalSections, server: uiPreferences.generalSections.server ?? true, debug: uiPreferences.generalSections.debug ?? true })
+    setIsPromptLogEnabled(uiPreferences.isPromptLogEnabled ?? false)
+    setIsSystemMonitorVisible(uiPreferences.isSystemMonitorVisible ?? true)
+    setTextStyleTarget(uiPreferences.textStyleTarget)
+    setTextStylePreset(uiPreferences.textStylePreset)
+    setTitleTextStylePreset(uiPreferences.titleTextStylePreset)
+    setContentTextStylePreset(uiPreferences.contentTextStylePreset)
+    setTitleFontSize(uiPreferences.titleFontSize)
+    setLastUsedModelPath(uiPreferences.lastUsedModelPath ?? null)
+    setContentFontSize(uiPreferences.contentFontSize)
+    projectViewportsRef.current = uiPreferences.projectViewports ?? {}
+    applySnapshot(snapshot)
+    persistedSnapshotRef.current = snapshot
+    setIsModelLoaded(settings.isModelLoaded)
+    setIsProjectDirty(false)
+    setIsBootstrapped(true)
+    hasLoadedPreferencesRef.current = true
+    setLibrary(library)
+    setStatus('Ready')
+  }
+
   useEffect(() => {
-    void window.graphChat.bootstrap().then(({ projects, snapshot, settings, uiPreferences }) => {
-      setProjects(projects)
-      setSettings(settings)
-      setIsSidebarOpen(uiPreferences.isSidebarOpen)
-      setIsSettingsPanelOpen(uiPreferences.isSettingsPanelOpen)
-      setIsPropertiesPanelOpen(uiPreferences.isPropertiesPanelOpen)
-      setIsMiniMapVisible(uiPreferences.isMiniMapVisible)
-      setIsSnapToGridEnabled(uiPreferences.isSnapToGridEnabled)
-      setEdgeType(uiPreferences.edgeType)
-      setIsProofreadEnabled(uiPreferences.isProofreadEnabled)
-      setProofreadPreset(uiPreferences.proofreadPreset ?? 'standard')
-      if (uiPreferences.proofreadSystemPrompt) setProofreadSystemPrompt(uiPreferences.proofreadSystemPrompt)
-      setLeftSidebarWidth(uiPreferences.leftSidebarWidth)
-      setRightInspectorWidth(Math.max(uiPreferences.rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH))
-      setGeneralSections({ ...uiPreferences.generalSections, server: uiPreferences.generalSections.server ?? true, debug: uiPreferences.generalSections.debug ?? true })
-      setIsPromptLogEnabled(uiPreferences.isPromptLogEnabled ?? false)
-      setIsSystemMonitorVisible(uiPreferences.isSystemMonitorVisible ?? true)
-      setTextStyleTarget(uiPreferences.textStyleTarget)
-      setTextStylePreset(uiPreferences.textStylePreset)
-      setTitleTextStylePreset(uiPreferences.titleTextStylePreset)
-      setContentTextStylePreset(uiPreferences.contentTextStylePreset)
-      setTitleFontSize(uiPreferences.titleFontSize)
-      setLastUsedModelPath(uiPreferences.lastUsedModelPath ?? null)
-      setContentFontSize(uiPreferences.contentFontSize)
-      projectViewportsRef.current = uiPreferences.projectViewports ?? {}
-      applySnapshot(snapshot)
-      persistedSnapshotRef.current = snapshot
-      setIsModelLoaded(settings.isModelLoaded)
-      setIsProjectDirty(false)
-      setIsBootstrapped(true)
-      hasLoadedPreferencesRef.current = true
-      setStatus('Ready')
-    }).catch((err) => {
+    void window.graphChat.bootstrap().then(applyBootstrap).catch((err) => {
       setError(err instanceof Error ? err.message : String(err))
       setStatus('Failed to load')
     })
@@ -703,6 +710,33 @@ function GraphChatApp() {
     persistedSnapshotRef.current = snapshot
     setIsProjectDirty(false)
     setStatus(`Project: ${snapshot.project.name}`)
+  }
+
+  async function openLibraryFolder() {
+    setIsLibraryMenuOpen(false)
+    if (!await confirmDiscardUnsavedChanges()) return
+    try {
+      const result = await window.graphChat.chooseLibrary()
+      if (result.canceled) return
+      applyBootstrap(result)
+      setStatus(`Library: ${result.library.currentName}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function switchToLibrary(libraryRoot: string) {
+    setIsLibraryMenuOpen(false)
+    if (libraryRoot === library?.currentPath) return
+    if (!await confirmDiscardUnsavedChanges()) return
+    try {
+      const result = await window.graphChat.switchLibrary(libraryRoot)
+      if (result.canceled) return
+      applyBootstrap(result)
+      setStatus(`Library: ${result.library.currentName}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function createProject() {
@@ -1670,6 +1704,49 @@ function GraphChatApp() {
       {isSidebarOpen && (
       <>
       <aside style={{ width: leftSidebarWidth }} className="relative z-20 flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
+        <div className="relative border-b border-[var(--border)] px-3 py-2.5">
+          <button
+            onClick={() => setIsLibraryMenuOpen((current) => !current)}
+            className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-white/5"
+            title={library?.currentPath}
+          >
+            <NewFolderIcon className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--text-faint)]">Library</div>
+              <div className="truncate text-[13px] font-medium text-[var(--text)]">{library?.currentName ?? '—'}</div>
+            </div>
+            <span className="shrink-0 text-[10px] text-[var(--text-faint)]">▾</span>
+          </button>
+          {isLibraryMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setIsLibraryMenuOpen(false)} />
+              <div className="absolute left-3 right-3 top-[calc(100%-2px)] z-40 rounded-xl border border-[var(--border-strong)] bg-[var(--bg-card)] p-1.5 text-sm text-[var(--text)] shadow-2xl">
+                <button
+                  onClick={() => void openLibraryFolder()}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] hover:bg-white/5"
+                >
+                  <NewFolderIcon className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+                  フォルダを開く…
+                </button>
+                {(library?.recent.filter((entry) => entry.path !== library.currentPath).length ?? 0) > 0 && (
+                  <div className="my-1 border-t border-[var(--border)]" />
+                )}
+                {library?.recent.filter((entry) => entry.path !== library.currentPath).map((entry) => (
+                  <button
+                    key={entry.path}
+                    onClick={() => entry.exists && void switchToLibrary(entry.path)}
+                    disabled={!entry.exists}
+                    title={entry.exists ? entry.path : `${entry.path} (見つかりません)`}
+                    className={`block w-full rounded-lg px-2.5 py-1.5 text-left ${entry.exists ? 'hover:bg-white/5' : 'cursor-not-allowed opacity-40'}`}
+                  >
+                    <div className="truncate text-[13px] font-medium">{entry.name}</div>
+                    <div className="truncate text-[10px] text-[var(--text-faint)]">{entry.path}</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="text-sm font-semibold tracking-[0.02em] text-[var(--text-dim)]">Projects</div>

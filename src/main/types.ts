@@ -22,6 +22,18 @@ export interface ProjectRecord {
   updatedAt: string
 }
 
+export interface LibraryRecentEntry {
+  path: string
+  name: string
+  exists: boolean
+}
+
+export interface LibraryInfo {
+  currentPath: string
+  currentName: string
+  recent: LibraryRecentEntry[]
+}
+
 export interface GenerationMeta {
   promptTokens: number | null
   completionTokens: number | null

@@ -2,6 +2,9 @@ import { nativeImage, contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('graphChat', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
+  getLibraryInfo: () => ipcRenderer.invoke('library:info'),
+  chooseLibrary: () => ipcRenderer.invoke('library:choose'),
+  switchLibrary: (libraryRoot: string) => ipcRenderer.invoke('library:switch', libraryRoot),
   listModels: () => ipcRenderer.invoke('models:list'),
   selectModel: (modelPath: string) => ipcRenderer.invoke('models:select', modelPath),
   ejectModel: () => ipcRenderer.invoke('models:eject'),

@@ -1,7 +1,20 @@
-import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, LlamaServerStatus, ProjectRecord, ProjectSnapshot, UiPreferences } from '../main/types'
+import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LibraryInfo, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, LlamaServerStatus, ProjectRecord, ProjectSnapshot, UiPreferences } from '../main/types'
+
+export interface BootstrapPayload {
+  projects: ProjectRecord[]
+  snapshot: ProjectSnapshot
+  settings: AppSettings
+  uiPreferences: UiPreferences
+  library: LibraryInfo
+}
+
+export type LibrarySwitchResult = { canceled: true } | ({ canceled: false } & BootstrapPayload)
 
 export interface GraphChatApi {
-  bootstrap(): Promise<{ projects: ProjectRecord[]; snapshot: ProjectSnapshot; settings: AppSettings; uiPreferences: UiPreferences }>
+  bootstrap(): Promise<BootstrapPayload>
+  getLibraryInfo(): Promise<LibraryInfo>
+  chooseLibrary(): Promise<LibrarySwitchResult>
+  switchLibrary(libraryRoot: string): Promise<LibrarySwitchResult>
   listModels(): Promise<AppSettings>
   selectModel(modelPath: string): Promise<{ settings: AppSettings }>
   ejectModel(): Promise<{ settings: AppSettings }>

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { app, nativeImage } from 'electron'
+import { nativeImage } from 'electron'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -83,13 +83,23 @@ export interface ImportImageNodeInput {
 }
 
 export class GraphRepository {
-  private readonly db: Database.Database
-  private readonly assetsDir: string
-  private readonly imageAssetsDir: string
+  private db!: Database.Database
+  private assetsDir!: string
+  private imageAssetsDir!: string
+  private libraryRoot = ''
 
-  constructor() {
-    const dbPath = join(app.getPath('userData'), 'graph-chat.db')
-    this.assetsDir = join(app.getPath('userData'), 'assets')
+  constructor(libraryRoot: string) {
+    this.openLibrary(libraryRoot)
+  }
+
+  /** Point this repository at a (possibly different) library folder, reopening the database. */
+  openLibrary(libraryRoot: string): void {
+    if (this.db) {
+      this.db.close()
+    }
+    this.libraryRoot = libraryRoot
+    const dbPath = join(libraryRoot, 'graph-chat.db')
+    this.assetsDir = join(libraryRoot, 'assets')
     this.imageAssetsDir = join(this.assetsDir, 'images')
     mkdirSync(dirname(dbPath), { recursive: true })
     mkdirSync(this.imageAssetsDir, { recursive: true })
@@ -137,6 +147,14 @@ export class GraphRepository {
     this.ensureNodePositionColumns()
     this.ensureEdgeHandleColumns()
     this.ensureNodeTypeConstraint()
+  }
+
+  close(): void {
+    this.db.close()
+  }
+
+  getLibraryRoot(): string {
+    return this.libraryRoot
   }
 
   listProjects(): ProjectRecord[] {

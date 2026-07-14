@@ -2,13 +2,14 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import * as os from 'node:os'
 import { exec } from 'node:child_process'
 import { GraphRepository } from './database'
 import { LlamaServerManager } from './llamaServer'
 import { fetchLlamaReleases, installLlamaVariant } from './llamaInstaller'
-import type { GraphEdgeRecord, GraphNodeRecord, ImageAsset, LlamaInstallProgress, LlamaReleaseVariant, NodeInputHandle, NodeType, ProjectSnapshot, UiPreferences } from './types'
+import { loadAppConfig, recordRecentLibrary } from './appConfig'
+import type { GraphEdgeRecord, GraphNodeRecord, ImageAsset, LibraryInfo, LlamaInstallProgress, LlamaReleaseVariant, NodeInputHandle, NodeType, ProjectSnapshot, UiPreferences } from './types'
 
 // ── System resource monitoring ────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ const DEFAULT_CONTENT_HEIGHT = 1080
 let repository: GraphRepository | null = null
 let llamaServer: LlamaServerManager | null = null
 let preferencesPath = ''
+let activeLibraryPath = ''
 const defaultUiPreferences: UiPreferences = {
   contextLength: 32768,
   temperature: 0.8,
@@ -168,6 +170,57 @@ function getPreferencesPath(): string {
 function getLlamaServer(): LlamaServerManager {
   if (!llamaServer) throw new Error('Llama server manager is not initialized yet.')
   return llamaServer
+}
+
+/** Backward-compatible default library: the repo-local `data/` folder used before libraries existed. */
+function defaultLibraryPath(): string {
+  return join(process.cwd(), 'data')
+}
+
+/** Point the app at a library folder, (re)opening its database and preferences. */
+function initLibrary(libraryRoot: string): void {
+  activeLibraryPath = libraryRoot
+  if (repository) repository.openLibrary(libraryRoot)
+  else repository = new GraphRepository(libraryRoot)
+  preferencesPath = join(libraryRoot, 'preferences.json')
+  console.log(`[library] active: ${libraryRoot}`)
+}
+
+function getLibraryInfo(): LibraryInfo {
+  const config = loadAppConfig()
+  return {
+    currentPath: activeLibraryPath,
+    currentName: basename(activeLibraryPath) || activeLibraryPath,
+    recent: config.recentLibraries.map((path) => ({ path, name: basename(path) || path, exists: existsSync(path) }))
+  }
+}
+
+/** Assemble everything the renderer needs to (re)initialize for the active library. */
+async function buildBootstrapPayload(keepModelState: boolean): Promise<{
+  projects: ReturnType<GraphRepository['listProjects']>
+  snapshot: ProjectSnapshot
+  settings: Awaited<ReturnType<LlamaServerManager['updateSettings']>>
+  uiPreferences: UiPreferences
+  library: LibraryInfo
+}> {
+  const repo = getRepository()
+  uiPreferencesCache = await loadUiPreferences()
+  const settings = await getLlamaServer().updateSettings({ contextLength: uiPreferencesCache.contextLength, temperature: uiPreferencesCache.temperature })
+  const snapshot = repo.ensureDefaultProject()
+  return {
+    projects: repo.listProjects(),
+    snapshot,
+    settings: { ...settings, isModelLoaded: keepModelState ? settings.isModelLoaded : false },
+    uiPreferences: uiPreferencesCache,
+    library: getLibraryInfo()
+  }
+}
+
+async function switchLibrary(libraryRoot: string): Promise<Awaited<ReturnType<typeof buildBootstrapPayload>>> {
+  initLibrary(libraryRoot)
+  recordRecentLibrary(libraryRoot)
+  hasUnsavedChanges = false
+  return buildBootstrapPayload(true)
 }
 
 function createWindow(): void {
@@ -233,10 +286,14 @@ function resolveIconPath(): string | undefined {
 }
 
 app.whenReady().then(() => {
+  // Keep Electron's own caches in the repo-local data/ folder (dev convenience);
+  // this does not affect `appData`, where app.json lives, nor the chosen library folder.
   app.setPath('userData', join(process.cwd(), 'data'))
-  repository = new GraphRepository()
+  const config = loadAppConfig()
+  const startLibrary = config.lastLibraryPath && existsSync(config.lastLibraryPath) ? config.lastLibraryPath : defaultLibraryPath()
+  initLibrary(startLibrary)
+  recordRecentLibrary(startLibrary)
   llamaServer = new LlamaServerManager()
-  preferencesPath = join(app.getPath('userData'), 'preferences.json')
   registerIpc()
   createWindow()
   startSystemResourcePolling()
@@ -254,11 +311,21 @@ app.on('window-all-closed', async () => {
 function registerIpc(): void {
   const repository = getRepository()
   const llamaServer = getLlamaServer()
-  ipcMain.handle('bootstrap', async () => {
-    uiPreferencesCache = await loadUiPreferences()
-    const settings = await llamaServer.updateSettings({ contextLength: uiPreferencesCache.contextLength, temperature: uiPreferencesCache.temperature })
-    const snapshot = repository.ensureDefaultProject()
-    return { projects: repository.listProjects(), snapshot, settings: { ...settings, isModelLoaded: false }, uiPreferences: uiPreferencesCache }
+  ipcMain.handle('bootstrap', async () => buildBootstrapPayload(false))
+  ipcMain.handle('library:info', async () => getLibraryInfo())
+  ipcMain.handle('library:choose', async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(window ?? undefined, {
+      title: 'Select Library Folder',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
+    return { canceled: false as const, ...(await switchLibrary(result.filePaths[0])) }
+  })
+  ipcMain.handle('library:switch', async (_event, libraryRoot: string) => {
+    if (!existsSync(libraryRoot)) throw new Error('Library folder no longer exists.')
+    if (resolve(libraryRoot) === resolve(activeLibraryPath)) return { canceled: true as const }
+    return { canceled: false as const, ...(await switchLibrary(libraryRoot)) }
   })
   ipcMain.handle('models:list', async () => llamaServer.getRuntimeSettings())
   ipcMain.handle('models:select', async (_event, modelPath: string) => {

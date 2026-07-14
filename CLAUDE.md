@@ -46,8 +46,16 @@ All nodes have one output handle on the right.
 - SQLite database managed by `database.ts`
 - Projects contain nodes and edges; full snapshots loaded on project switch
 - UI preferences persisted separately via Electron IPC
-- Both `graph-chat.db` and `preferences.json` are stored in `data/` at the project root (gitignored)
 - Per-project camera position and zoom are saved in `UiPreferences.projectViewports` and restored on project switch
+
+#### Libraries (root folders)
+
+- A **library** is a self-contained data folder. It holds `graph-chat.db`, `assets/images/`, and `preferences.json`. Everything for one set of projects lives under one root folder, so it is portable (backup / sync / move between machines).
+- `GraphRepository` is constructed with a `libraryRoot` and can be repointed in place via `openLibrary(root)` (the instance is reused so IPC handlers that captured it stay valid).
+- The active library, plus a recent-libraries list, is tracked in **`app.json`** under `app.getPath('appData')` (`%APPDATA%/graph-chat/app.json`) — independent of any library and of the dev-mode `userData` override. Managed by `appConfig.ts`.
+- Startup resolves the library from `app.json`'s `lastLibraryPath`; if unset/missing it falls back to the repo-local `data/` folder (backward compatible; `data/` is still Electron's `userData` for caches).
+- Switch libraries in-app via the **Library** bar at the top of the left sidebar (folder picker + recent list). IPC: `library:info` / `library:choose` / `library:switch`.
+- Models (`.gguf`) and the llama server stay app/global (under `models/` and `bin/`); libraries only reference the selected model by path, never copy it.
 
 ### LLM backend
 
