@@ -20,7 +20,7 @@ import {
   type Viewport
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LibraryInfo, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
+import type { AppSettings, GraphEdgeRecord, GraphNodeRecord, LibraryInfo, LlamaInstallProgress, LlamaRelease, LlamaReleaseVariant, ModelOption, NodeInputHandle, NodeType, ProjectRecord, ProjectSnapshot, ProofreadPreset, SwitchNodeType, TextStylePreset, TextStyleTarget, UiPreferences } from '../../main/types'
 
 type BootstrapPayload = Awaited<ReturnType<typeof window.graphChat.bootstrap>>
 import {
@@ -125,7 +125,7 @@ function getSwitchSliderMax(inputCount: number): number {
 
 type SwitchKind = 'text' | 'context' | 'instruction'
 
-function switchKindForNodeType(type: 'textSwitch' | 'contextSwitch' | 'instructionSwitch'): SwitchKind {
+function switchKindForNodeType(type: SwitchNodeType): SwitchKind {
   if (type === 'textSwitch') return 'text'
   if (type === 'contextSwitch') return 'context'
   return 'instruction'
@@ -146,14 +146,6 @@ function switchTextColorClass(kind: SwitchKind): string {
 function mutedSwitchEdgeClass(handle: NodeInputHandle | null): string {
   return handle === 'text' ? 'switch-edge-muted switch-edge-muted-text' : 'switch-edge-muted'
 }
-
-type ProjectDialogState =
-  | {
-      mode: 'create' | 'rename'
-      projectId?: string
-      value: string
-    }
-  | null
 
 type ProjectMenuState = {
   projectId: string
@@ -242,9 +234,7 @@ function GraphChatApp() {
   const [contentTextStylePreset, setContentTextStylePreset] = useState<TextStylePreset>('standard')
   const [titleFontSize, setTitleFontSize] = useState(DEFAULT_TITLE_FONT_SIZE)
   const [contentFontSize, setContentFontSize] = useState(DEFAULT_CONTENT_FONT_SIZE)
-  const [modelFilter, setModelFilter] = useState('')
   const [lastUsedModelPath, setLastUsedModelPath] = useState<string | null>(null)
-  const [projectDialog, setProjectDialog] = useState<ProjectDialogState>(null)
   const [projectMenu, setProjectMenu] = useState<ProjectMenuState>(null)
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null)
   const [renamingValue, setRenamingValue] = useState('')
@@ -607,18 +597,19 @@ function GraphChatApp() {
       edges: snapshot.edges.map((edge) => {
         const previous = previousEdgeMap.get(edge.id)
         const targetNode = nodeMap.get(edge.targetId)
-        const targetSwitchHandle = targetNode ? switchInputHandleForNodeType(targetNode.type) : null
+        const targetSwitchType = targetNode && isSwitchNodeType(targetNode.type) ? targetNode.type : null
+        const targetSwitchHandle = targetSwitchType ? switchInputHandleForNodeType(targetSwitchType) : null
         const resolvedTargetHandle = edge.targetHandle ?? previous?.targetHandle ?? resolveTargetHandleForEdge(edge, snapshot.nodes)
         let targetHandle = resolvedTargetHandle
-        if (targetSwitchHandle && baseTargetHandle(targetHandle) === targetSwitchHandle && switchHandleIndex(targetHandle) === null) {
+        if (targetSwitchType && baseTargetHandle(targetHandle) === targetSwitchHandle && switchHandleIndex(targetHandle) === null) {
           const key = `${edge.targetId}:${targetSwitchHandle}`
           const usedIndexes = switchHandleUsage.get(key) ?? new Set<number>()
           switchHandleUsage.set(key, usedIndexes)
           let nextIndex = 1
           while (usedIndexes.has(nextIndex)) nextIndex += 1
           usedIndexes.add(nextIndex)
-          targetHandle = switchHandleAt(targetNode!.type, nextIndex)
-        } else if (targetSwitchHandle && baseTargetHandle(targetHandle) === targetSwitchHandle) {
+          targetHandle = switchHandleAt(targetSwitchType, nextIndex)
+        } else if (targetSwitchType && baseTargetHandle(targetHandle) === targetSwitchHandle) {
           const key = `${edge.targetId}:${targetSwitchHandle}`
           const usedIndexes = switchHandleUsage.get(key) ?? new Set<number>()
           switchHandleUsage.set(key, usedIndexes)
@@ -627,7 +618,7 @@ function GraphChatApp() {
             let nextIndex = 1
             while (usedIndexes.has(nextIndex)) nextIndex += 1
             usedIndexes.add(nextIndex)
-            targetHandle = switchHandleAt(targetNode!.type, nextIndex)
+            targetHandle = switchHandleAt(targetSwitchType, nextIndex)
           } else {
             usedIndexes.add(currentIndex)
           }
@@ -704,6 +695,7 @@ function GraphChatApp() {
   }
 
   async function switchProject(projectId: string) {
+    if (projectId === activeProjectId) return
     if (!await confirmDiscardUnsavedChanges()) return
     const snapshot = await window.graphChat.openProject(projectId)
     applySnapshot(snapshot)
@@ -772,16 +764,17 @@ function GraphChatApp() {
   }
 
   async function deleteProject(project: ProjectRecord) {
-    if (project.id !== activeProjectId && !confirm(`Delete "${project.name}"?`)) return
-    if (project.id === activeProjectId) {
-      if (!await confirmDiscardUnsavedChanges()) return
-      if (!confirm(`Delete "${project.name}"?`)) return
-    }
+    const isActive = project.id === activeProjectId
+    if (isActive && !await confirmDiscardUnsavedChanges()) return
+    if (!confirm(`Delete "${project.name}"?`)) return
     const result = await window.graphChat.deleteProject(project.id)
     setProjects(result.projects)
-    applySnapshot(result.snapshot)
-    persistedSnapshotRef.current = result.snapshot
-    setIsProjectDirty(false)
+    setProjectMenu(null)
+    if (isActive) {
+      applySnapshot(result.snapshot)
+      persistedSnapshotRef.current = result.snapshot
+      setIsProjectDirty(false)
+    }
   }
 
   async function confirmDiscardUnsavedChanges() {
@@ -983,6 +976,9 @@ function GraphChatApp() {
       }
       if (expectedHandle !== baseHandle) {
         throw new Error(`${displayNodeTypeLabel(sourceNode.type, sourceNode.isLocal)} nodes connect to the ${targetHandleLabel(expectedHandle)} input.`)
+      }
+      if (snapshot.edges.some((edge) => edge.sourceId === connection.source && edge.targetId === connection.target)) {
+        throw new Error('These nodes are already connected.')
       }
       const nextEdge: GraphEdgeRecord = {
         id: crypto.randomUUID(),
@@ -1246,7 +1242,6 @@ function GraphChatApp() {
       const latestSettings = await window.graphChat.listModels()
       setSettings(latestSettings)
       setIsModelLoaded(latestSettings.isModelLoaded)
-      setModelFilter('')
       setIsModelModalOpen(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -1367,10 +1362,10 @@ function GraphChatApp() {
       }
       setSelectedNodes(Array.from(selectedIds))
     }
-    const positionChanges = changes.filter((change) => change.type === 'position' && change.position && !change.dragging)
-    for (const change of positionChanges) {
+    for (const change of changes) {
+      if (change.type !== 'position' || !change.position || change.dragging) continue
       const graphNode = snapshotRef.current?.nodes.find((node) => node.id === change.id)
-      if (!graphNode || !change.position) continue
+      if (!graphNode) continue
       const updated = { ...graphNode, position: normalizePosition(change.position, isSnapToGridEnabled) }
       mutateLocalNode(updated)
       await persistNode(updated)
@@ -1556,7 +1551,6 @@ function GraphChatApp() {
         setNodeMenu(null)
         setSelectedEdge(null)
         setIsModelModalOpen(false)
-        setProjectDialog(null)
         setProjectMenu(null)
         setRenamingProjectId(null)
       }
@@ -1588,7 +1582,7 @@ function GraphChatApp() {
     }
   }
 
-  function openCanvasMenu(event: React.MouseEvent) {
+  function openCanvasMenu(event: React.MouseEvent | MouseEvent) {
     event.preventDefault()
     const bounds = mainRef.current?.getBoundingClientRect()
     const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY })
@@ -1632,14 +1626,7 @@ function GraphChatApp() {
   const hasRightPanels = isSettingsPanelOpen || isPropertiesPanelOpen
   const effectivePropertiesWidth = Math.max(rightInspectorWidth, DEFAULT_RIGHT_INSPECTOR_WIDTH)
   const nodeMenuNode = nodeMenu ? snapshotRef.current?.nodes.find((node) => node.id === nodeMenu.nodeId) ?? null : null
-  const filteredModels = settings?.availableModels.filter((model) => {
-    const haystack = [
-      model.name,
-      model.metadata.quantizationLabel,
-      model.metadata.parameterLabel
-    ].filter(Boolean).join(' ').toLowerCase()
-    return haystack.includes(modelFilter.toLowerCase())
-  }) ?? []
+  const availableModels = settings?.availableModels ?? []
 
   if (!isBootstrapped) {
     return <div className="flex h-screen bg-[var(--bg)]" />
@@ -1898,7 +1885,7 @@ function GraphChatApp() {
               </div>
               <div className="mt-3 max-h-[360px] overflow-y-auto transition">
                 <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)]">Your Models</div>
-                {filteredModels.map((model) => {
+                {availableModels.map((model) => {
                   const isActive = isModelLoaded && model.path === settings.selectedModelPath
                   return (
                     <button
@@ -1926,7 +1913,7 @@ function GraphChatApp() {
                     </button>
                   )
                 })}
-                {filteredModels.length === 0 && (
+                {availableModels.length === 0 && (
                   <p className="px-3 py-4 text-center text-[13px] text-[var(--text-faint)]">No models found</p>
                 )}
               </div>
@@ -1986,40 +1973,6 @@ function GraphChatApp() {
               </div>
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
                 <img src={imagePreview.src} alt={imagePreview.title} className="max-h-[78vh] w-auto max-w-full rounded-[10px] object-contain" draggable={false} />
-              </div>
-            </div>
-          </div>
-        )}
-        {projectDialog && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-6" onClick={() => setProjectDialog(null)}>
-            <div className="w-full max-w-md rounded-[20px] border border-[var(--border-strong)] bg-[var(--bg-sidebar)] p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              <div className="text-xs uppercase tracking-[0.28em] text-[var(--text-dim)]">プロジェクト</div>
-              <h3 className="mt-2 text-2xl font-semibold">{projectDialog.mode === 'create' ? '新しいプロジェクトを作成' : 'プロジェクト名を変更'}</h3>
-              <input
-                autoFocus
-                value={projectDialog.value}
-                onChange={(event) => setProjectDialog((current) => current ? { ...current, value: event.target.value } : current)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    if (projectDialog.projectId) {
-                      void submitRenameProject(projectDialog.projectId, projectDialog.value)
-                    }
-                  }
-                }}
-                className="mt-4 w-full rounded-[14px] border border-[var(--border-strong)] bg-[var(--bg-input)] px-4 py-3 outline-none"
-              />
-              <div className="mt-4 flex justify-end gap-2">
-                <button className="rounded-[12px] border border-[var(--border-strong)] px-4 py-2 text-sm text-[var(--text)]" onClick={() => setProjectDialog(null)}>キャンセル</button>
-                <button
-                  className="rounded-[12px] bg-[var(--accent)] px-4 py-2 text-sm text-white hover:bg-[var(--accent-hover)]"
-                  onClick={() => {
-                    if (projectDialog.projectId) {
-                      void submitRenameProject(projectDialog.projectId, projectDialog.value)
-                    }
-                  }}
-                >
-                  保存
-                </button>
               </div>
             </div>
           </div>
@@ -2371,11 +2324,11 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
         const selectedIndex = parseSwitchInputIndex(node.content)
         const top = `${((index) / (switchInputCount + 1)) * 100}%`
         const isSelectedInput = index === selectedIndex
-        const switchKind = switchKindForNodeType(node.type)
+        const switchKind = switchKindForNodeType(node.type as SwitchNodeType)
         return (
           <div key={index}>
             <Handle
-              id={switchHandleAt(node.type, index)}
+              id={switchHandleAt(node.type as SwitchNodeType, index)}
               type="target"
               position={Position.Left}
               style={{ top }}
@@ -2652,22 +2605,6 @@ function GraphNodeCard({ data }: { data: AppNodeData }) {
           <div className="ml-auto">
             <MetaItem icon={<SidebarToggleIcon className="h-3.5 w-3.5" />} label={`${Math.round(node.size.width)} x ${Math.round(node.size.height)}`} />
           </div>
-        </div>
-        <div className="hidden mt-3 justify-between text-xs text-[var(--text-dim)]">
-          <div className="flex items-center gap-3">
-            <button className="nodrag nopan" onClick={() => {
-              if (data.isEditing) {
-                commitDraft()
-                data.onStopEdit()
-              } else {
-                data.onSelect(node.id)
-                data.onStartEdit(node.id)
-              }
-            }}>
-              {data.isEditing ? 'Close' : 'Edit'}
-            </button>
-          </div>
-          <span>{Math.round(node.size.width)} x {Math.round(node.size.height)}</span>
         </div>
       </div>
       {isSystemPromptOpen && hasGenerationPromptLog && (
@@ -3945,15 +3882,6 @@ function FileImageIcon({ className }: { className?: string }) {
     </svg>
   )
 }
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.35-4.35" />
-    </svg>
-  )
-}
-
 function ChevronDownIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">

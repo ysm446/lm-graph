@@ -1,4 +1,5 @@
-export type NodeType = 'text' | 'context' | 'instruction' | 'image' | 'textSwitch' | 'contextSwitch' | 'instructionSwitch'
+export type SwitchNodeType = 'textSwitch' | 'contextSwitch' | 'instructionSwitch'
+export type NodeType = 'text' | 'context' | 'instruction' | 'image' | SwitchNodeType
 export type NodeInputHandle = 'text' | 'context' | 'instruction' | 'image' | `text:${number}` | `context:${number}` | `instruction:${number}`
 export type NodeOutputHandle = 'output'
 export type TextStyleTarget = 'both' | 'title' | 'content'

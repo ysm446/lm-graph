@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import * as os from 'node:os'
 import { exec } from 'node:child_process'
-import { GraphRepository } from './database'
+import { GraphRepository, type UpdateNodeInput } from './database'
 import { LlamaServerManager } from './llamaServer'
 import { fetchLlamaReleases, installLlamaVariant } from './llamaInstaller'
 import { loadAppConfig, recordRecentLibrary } from './appConfig'
@@ -315,10 +315,11 @@ function registerIpc(): void {
   ipcMain.handle('library:info', async () => getLibraryInfo())
   ipcMain.handle('library:choose', async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender)
-    const result = await dialog.showOpenDialog(window ?? undefined, {
+    const options: Electron.OpenDialogOptions = {
       title: 'Select Library Folder',
       properties: ['openDirectory', 'createDirectory']
-    })
+    }
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
     return { canceled: false as const, ...(await switchLibrary(result.filePaths[0])) }
   })
@@ -329,7 +330,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('models:list', async () => llamaServer.getRuntimeSettings())
   ipcMain.handle('models:select', async (_event, modelPath: string) => {
-    const settings = await llamaServer.selectModel(modelPath)
+    await llamaServer.selectModel(modelPath)
     return { settings: await llamaServer.getRuntimeSettings() }
   })
   ipcMain.handle('models:eject', async () => {
@@ -448,6 +449,7 @@ function registerIpc(): void {
   ipcMain.handle('node:duplicateImageAsset', async (_event, nodeId: string, duplicatedNodeId: string) => {
     return repository.duplicateImageAsset(nodeId, duplicatedNodeId)
   })
+  ipcMain.handle('node:update', async (_event, input: UpdateNodeInput) => repository.updateNode(input))
   ipcMain.handle('node:delete', async (_event, id: string) => {
     const node = repository.getNode(id)
     repository.deleteNode(id)
@@ -502,9 +504,7 @@ function registerIpc(): void {
       event,
       generationId,
       snapshot,
-      persistToRepository: payload.snapshot === undefined,
       targetNode: sourceNode,
-      projectId: payload.projectId,
       systemPrompt: context.systemPrompt,
       userContext: context.userContext,
       initialContent: '',
@@ -523,15 +523,14 @@ async function streamGeneration(input: {
   event: Electron.IpcMainInvokeEvent
   generationId: string
   snapshot: ProjectSnapshot
-  persistToRepository: boolean
   targetNode: GraphNodeRecord
-  projectId: string
   systemPrompt: string
   userContext: string
   initialContent: string
   signal: AbortSignal
 }): Promise<void> {
   try {
+    const repository = getRepository()
     const llamaServer = getLlamaServer()
     await llamaServer.ensureRunning()
     const userMessage = input.userContext + '\n\n---\nWrite the target text based on the context above.'
@@ -599,20 +598,11 @@ async function streamGeneration(input: {
           if (!delta) continue
           content += delta
           const visibleContent = stripThinkTags(content)
-          if (input.persistToRepository) {
-            repository.updateNode({
-              id: input.targetNode.id,
-              content: visibleContent,
-              isGenerated: true,
-              model: llamaServer.getSettings().llamaModelAlias
-            })
-          } else {
-            workingSnapshot = updateSnapshotNode(workingSnapshot, input.targetNode.id, {
-              content: visibleContent,
-              isGenerated: true,
-              model: llamaServer.getSettings().llamaModelAlias
-            })
-          }
+          workingSnapshot = updateSnapshotNode(workingSnapshot, input.targetNode.id, {
+            content: visibleContent,
+            isGenerated: true,
+            model: llamaServer.getSettings().llamaModelAlias
+          })
           input.event.sender.send('generation:delta', { generationId: input.generationId, nodeId: input.targetNode.id, content: visibleContent })
         }
       }
@@ -626,29 +616,20 @@ async function streamGeneration(input: {
       systemPrompt: input.systemPrompt,
       userMessage
     })
-    if (input.persistToRepository) {
-      repository.updateNode({
-        id: input.targetNode.id,
-        content: stripThinkTags(content),
-        isGenerated: true,
-        model: llamaServer.getSettings().llamaModelAlias,
-        generationMeta
-      })
-    } else {
-      workingSnapshot = updateSnapshotNode(workingSnapshot, input.targetNode.id, {
-        content: stripThinkTags(content),
-        isGenerated: true,
-        model: llamaServer.getSettings().llamaModelAlias,
-        generationMeta
-      })
-    }
+    workingSnapshot = updateSnapshotNode(workingSnapshot, input.targetNode.id, {
+      content: stripThinkTags(content),
+      isGenerated: true,
+      model: llamaServer.getSettings().llamaModelAlias,
+      generationMeta
+    })
     input.event.sender.send('generation:done', {
       generationId: input.generationId,
       nodeId: input.targetNode.id,
-      snapshot: input.persistToRepository ? repository.getProjectSnapshot(input.projectId) : workingSnapshot,
+      snapshot: workingSnapshot,
       projects: repository.listProjects()
     })
   } catch (error) {
+    if (input.signal.aborted || (error as Error)?.name === 'AbortError') return
     const message = error instanceof Error ? error.message : 'Unknown generation error'
     input.event.sender.send('generation:error', { generationId: input.generationId, message, nodeId: input.targetNode.id })
   }
@@ -745,7 +726,7 @@ Write the final content for this target node.`
       ...[...upstreamTextParts].reverse(),
       ...directParentTexts,
       targetInfo
-    ].filter(Boolean).join('\\n\\n') || self?.title || 'Write the final content for the target node.',
+    ].filter(Boolean).join('\n\n') || 'Write the final content for the target node.',
     images: directImageParents.map((node) => node.image).filter((image): image is ImageAsset => Boolean(image))
   }
 }

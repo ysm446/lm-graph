@@ -45,6 +45,7 @@ export interface GraphChatApi {
     position?: { x: number; y: number }
     size?: { width: number; height: number }
   }): Promise<{ node: GraphNodeRecord; snapshot: ProjectSnapshot; projects: ProjectRecord[] }>
+  createImageNode(input: { projectId: string; position?: { x: number; y: number } }): Promise<{ canceled: boolean; node?: GraphNodeRecord; snapshot?: ProjectSnapshot; projects?: ProjectRecord[] }>
   replaceImageNode(nodeId: string): Promise<{ canceled: boolean; node?: GraphNodeRecord; snapshot?: ProjectSnapshot; projects?: ProjectRecord[] }>
   duplicateImageAsset(nodeId: string, duplicatedNodeId: string): Promise<GraphNodeRecord['image']>
   updateNode(input: {
