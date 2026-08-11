@@ -86,3 +86,18 @@ npm run build      # Type-check + build for production
 - Right sidebar has three collapsible sections: **Context and Offload** (model settings), **Interface** (MiniMap, Snap to Grid, Edge Style), **Editing** (Proofread on Select)
 - Node titles are shown outside the node at low zoom levels (`zoom < 0.65`) using `useViewport()` with inverse-scale font sizing
 - Generating nodes display a pulsing purple glow animation via the `.node-generating-border` CSS class
+
+## UI Style Guide (MUST READ before any UI change)
+
+**`docs/design/style-guide.md` is the single source of truth for the app's visual design.**
+
+Before changing anything the user sees — colors, fonts, spacing, radii, shadows, buttons, toggles, selects, sliders, sections, menus, modals, node cards, handles, edges, icons, animations — read `docs/design/style-guide.md` first and follow it exactly.
+
+Rules:
+
+- Use the existing design tokens (`var(--text)`, `var(--bg-card)`, `var(--accent)`, …). Do not introduce new hardcoded colors; node-type identity colors are the only documented exception.
+- Reuse font sizes, spacing values, border radii, and component class strings documented in the guide. Do not invent new values or new component looks.
+- Reuse the existing shared components (`IconButton`, `ToolbarButton`, `MenuAction`, `InspectorSection`, the toggle switch pattern, `graph-slider`) instead of building lookalikes.
+- Keep state styling consistent (hover / selected / disabled / changed-from-default / generating) as defined in the guide.
+- Run the checklist at the end of the guide before finishing a UI change.
+- If a genuinely new pattern is required, add it to `docs/design/style-guide.md` and update its `更新日時` in the same change.
